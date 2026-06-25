@@ -233,3 +233,37 @@ class TestBuildConcatenatedPdf:
         reader = PdfReader(str(output))
         full_text = "".join(page.extract_text() or "" for page in reader.pages)
         assert "generated automatically" not in full_text
+
+    def test_toc_wraps_long_filename_before_part_column(self, tmp_path: Path):
+        from pdf_concatenator.pdf_build import (
+            LABEL_FONT,
+            LABEL_FONT_SIZE,
+            RIGHT_COLUMN_RESERVE,
+            PAGE_WIDTH,
+            MARGIN,
+            SplitContext,
+            _label_lines,
+            _render_toc_pages,
+            _text_width,
+        )
+
+        long_name = (
+            "2005-03-01 Estates & Management Ltd Scannable Document on "
+            "May 22, 2020 at 14_08_03.pdf"
+        )
+        rows = [(0, long_name, True, "Part 2", "A short summary.")]
+        lines = _label_lines(0, long_name, True, "Part 2")
+        assert len(lines) > 1
+
+        max_line_width = PAGE_WIDTH - MARGIN - RIGHT_COLUMN_RESERVE - MARGIN
+        for line in lines:
+            assert _text_width(LABEL_FONT, LABEL_FONT_SIZE, line) <= max_line_width + 1
+
+        reader = _render_toc_pages(
+            rows,
+            include_summaries=True,
+            split=SplitContext(1, 2, {long_name: 2}),
+        )
+        toc_text = reader.pages[0].extract_text() or ""
+        assert "Part 2" in toc_text
+        assert "14_08_03.pdf" in toc_text

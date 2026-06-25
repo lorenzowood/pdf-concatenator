@@ -7,6 +7,7 @@ from pathlib import Path
 from pypdf import PdfReader, PdfWriter
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
+from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfgen import canvas
 
 
@@ -15,9 +16,15 @@ MARGIN = 54  # 0.75 inch
 FOOTER_HEIGHT = 14
 CONTENT_BOTTOM = MARGIN + FOOTER_HEIGHT
 ROW_HEIGHT = 16
+LABEL_LINE_HEIGHT = 14
 LABEL_BASELINE_FROM_TOP = 12
 SUMMARY_LINE_HEIGHT = 12
 INDENT_PER_LEVEL = 14
+RIGHT_COLUMN_RESERVE = 52
+LABEL_FONT = "Helvetica"
+LABEL_FONT_SIZE = 11
+SUMMARY_FONT = "Helvetica"
+SUMMARY_FONT_SIZE = 9
 GREY = colors.Color(0.95, 0.95, 0.95)
 SUMMARY_DISCLAIMER = "Summaries are generated automatically and may contain errors."
 
@@ -115,14 +122,85 @@ def _wrap_text(text: str, max_chars: int) -> list[str]:
     return lines or [""]
 
 
-def _row_block_height(
+def _text_width(font_name: str, font_size: float, text: str) -> float:
+    return pdfmetrics.stringWidth(text, font_name, font_size)
+
+
+def _wrap_text_to_width(
+    text: str,
+    font_name: str,
+    font_size: float,
+    max_width: float,
+) -> list[str]:
+    if max_width <= 0:
+        return [text]
+
+    words = text.split()
+    lines: list[str] = []
+    current: list[str] = []
+
+    for word in words:
+        candidate = " ".join(current + [word]) if current else word
+        if current and _text_width(font_name, font_size, candidate) > max_width:
+            lines.append(" ".join(current))
+            current = [word]
+        else:
+            current.append(word)
+
+    if current:
+        remainder = " ".join(current)
+        if _text_width(font_name, font_size, remainder) > max_width:
+            lines.extend(_wrap_text(remainder, max(1, int(max_width / (font_size * 0.5)))))
+        else:
+            lines.append(remainder)
+
+    return lines or [""]
+
+
+def _text_area_width(x: float, has_right_column: bool) -> float:
+    right_edge = PAGE_WIDTH - MARGIN
+    if has_right_column:
+        right_edge -= RIGHT_COLUMN_RESERVE
+    return right_edge - x
+
+
+def _label_lines(
+    depth: int,
+    label: str,
     is_file: bool,
+    right_column: str | None,
+) -> list[str]:
+    x = MARGIN + depth * INDENT_PER_LEVEL
+    reserve_column = is_file and right_column is not None
+    width = _text_area_width(x, reserve_column)
+    return _wrap_text_to_width(label, LABEL_FONT, LABEL_FONT_SIZE, width)
+
+
+def _summary_lines(
+    depth: int,
+    summary: str,
+    has_right_column: bool,
+) -> list[str]:
+    x = MARGIN + depth * INDENT_PER_LEVEL + INDENT_PER_LEVEL
+    width = _text_area_width(x, has_right_column)
+    return _wrap_text_to_width(summary, SUMMARY_FONT, SUMMARY_FONT_SIZE, width)
+
+
+def _row_block_height(
+    depth: int,
+    label: str,
+    is_file: bool,
+    right_column: str | None,
     summary: str | None,
     include_summaries: bool,
 ) -> int:
-    height = ROW_HEIGHT
+    label_line_count = len(_label_lines(depth, label, is_file, right_column))
+    height = ROW_HEIGHT + max(0, label_line_count - 1) * LABEL_LINE_HEIGHT
     if include_summaries and is_file and summary:
-        height += len(_wrap_text(summary, 70)) * SUMMARY_LINE_HEIGHT
+        height += (
+            len(_summary_lines(depth, summary, bool(right_column)))
+            * SUMMARY_LINE_HEIGHT
+        )
     return height
 
 
@@ -175,7 +253,9 @@ def _render_toc_pages(
     y = start_page(c)
 
     for depth, label, is_file, right_column, summary in rows:
-        block_height = _row_block_height(is_file, summary, include_summaries)
+        block_height = _row_block_height(
+            depth, label, is_file, right_column, summary, include_summaries
+        )
         if y - block_height < CONTENT_BOTTOM:
             end_page(c)
             c.showPage()
@@ -191,17 +271,22 @@ def _render_toc_pages(
 
         x = MARGIN + depth * INDENT_PER_LEVEL
         label_baseline = row_top - LABEL_BASELINE_FROM_TOP
-        c.setFont("Helvetica", 11)
-        c.drawString(x, label_baseline, label)
+        c.setFont(LABEL_FONT, LABEL_FONT_SIZE)
+        for line_index, line in enumerate(
+            _label_lines(depth, label, is_file, right_column)
+        ):
+            c.drawString(x, label_baseline - line_index * LABEL_LINE_HEIGHT, line)
         if is_file and right_column is not None:
             c.drawRightString(PAGE_WIDTH - MARGIN, label_baseline, right_column)
 
-        summary_baseline = label_baseline - SUMMARY_LINE_HEIGHT
+        summary_baseline = label_baseline - len(
+            _label_lines(depth, label, is_file, right_column)
+        ) * LABEL_LINE_HEIGHT
         if include_summaries and is_file and summary:
-            c.setFont("Helvetica", 9)
-            for line in _wrap_text(summary, 70):
-                c.drawString(x + INDENT_PER_LEVEL, summary_baseline, line)
+            c.setFont(SUMMARY_FONT, SUMMARY_FONT_SIZE)
+            for line in _summary_lines(depth, summary, bool(right_column)):
                 summary_baseline -= SUMMARY_LINE_HEIGHT
+                c.drawString(x + INDENT_PER_LEVEL, summary_baseline, line)
 
         y = row_bottom
         row_index += 1
