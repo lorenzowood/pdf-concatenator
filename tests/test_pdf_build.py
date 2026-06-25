@@ -179,11 +179,12 @@ class TestBuildConcatenatedPdf:
         from pdf_concatenator.pdf_build import (
             MARGIN,
             PAGE_HEIGHT,
-            ROW_HEIGHT,
             _render_toc_pages,
+            _row_block_height,
         )
 
         rows = [(0, f"f{i}.pdf", True, str(i + 2), None) for i in range(4)]
+        block_height = _row_block_height(0, "f0.pdf", True, "2", None, False)
         rect_calls: list[tuple[float, float, float, float]] = []
         original_canvas = __import__(
             "reportlab.pdfgen.canvas", fromlist=["Canvas"]
@@ -198,13 +199,96 @@ class TestBuildConcatenatedPdf:
         _render_toc_pages(rows, include_summaries=False)
 
         first_row_top = PAGE_HEIGHT - MARGIN - 28
-        first_row_bottom = first_row_top - ROW_HEIGHT
+        first_row_bottom = first_row_top - block_height
+        row_rects = [rect for rect in rect_calls if rect[3] == block_height]
 
-        assert len(rect_calls) == 2
-        assert rect_calls[0][1] == pytest.approx(first_row_bottom - ROW_HEIGHT)
-        assert rect_calls[0][3] == ROW_HEIGHT
-        assert rect_calls[1][1] == pytest.approx(first_row_bottom - 3 * ROW_HEIGHT)
-        assert rect_calls[1][3] == ROW_HEIGHT
+        assert len(row_rects) == 2
+        assert row_rects[0][1] == pytest.approx(first_row_bottom - block_height)
+        assert row_rects[0][3] == block_height
+        assert row_rects[1][1] == pytest.approx(first_row_bottom - 3 * block_height)
+        assert row_rects[1][3] == block_height
+
+    def test_toc_pages_use_contents_background_and_tinted_stripes(self, mocker):
+        from reportlab.lib import colors
+
+        from pdf_concatenator.color_parse import DEFAULT_BACKGROUND_RGB, tint_with_black
+        from pdf_concatenator.pdf_build import PAGE_HEIGHT, PAGE_WIDTH, _render_toc_pages
+
+        rows = [(0, f"f{i}.pdf", True, str(i + 2), None) for i in range(3)]
+        rect_fills: list[tuple[colors.Color, tuple[float, float, float, float]]] = []
+        original_canvas = __import__(
+            "reportlab.pdfgen.canvas", fromlist=["Canvas"]
+        ).Canvas
+
+        class CapturingCanvas(original_canvas):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self._current_fill = colors.black
+
+            def setFillColor(self, color, *args, **kwargs):
+                self._current_fill = color
+                return super().setFillColor(color, *args, **kwargs)
+
+            def rect(self, x, y, width, height, **kwargs):
+                rect_fills.append((self._current_fill, (x, y, width, height)))
+                return super().rect(x, y, width, height, **kwargs)
+
+        mocker.patch("pdf_concatenator.pdf_build.canvas.Canvas", CapturingCanvas)
+        _render_toc_pages(rows, include_summaries=False)
+
+        page_background = colors.Color(*DEFAULT_BACKGROUND_RGB)
+        stripe_background = colors.Color(
+            *tint_with_black(DEFAULT_BACKGROUND_RGB, opacity=0.05)
+        )
+        page_rects = [
+            rect for color, rect in rect_fills if rect[3] == PAGE_HEIGHT
+        ]
+        stripe_rects = [
+            rect for color, rect in rect_fills if rect[3] != PAGE_HEIGHT
+        ]
+
+        assert len(page_rects) == 1
+        assert page_rects[0] == (0, 0, PAGE_WIDTH, PAGE_HEIGHT)
+        assert any(color == page_background for color, _ in rect_fills)
+        assert any(color == stripe_background for color, _ in rect_fills)
+        assert len(stripe_rects) == 1
+
+    def test_cover_page_uses_cover_background(self, mocker):
+        from reportlab.lib import colors
+
+        from pdf_concatenator.pdf_build import PAGE_HEIGHT, PAGE_WIDTH, _render_cover_page
+
+        rect_fills: list[tuple[colors.Color, tuple[float, float, float, float]]] = []
+        original_canvas = __import__(
+            "reportlab.pdfgen.canvas", fromlist=["Canvas"]
+        ).Canvas
+
+        class CapturingCanvas(original_canvas):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self._current_fill = colors.black
+
+            def setFillColor(self, color, *args, **kwargs):
+                self._current_fill = color
+                return super().setFillColor(color, *args, **kwargs)
+
+            def rect(self, x, y, width, height, **kwargs):
+                rect_fills.append((self._current_fill, (x, y, width, height)))
+                return super().rect(x, y, width, height, **kwargs)
+
+        mocker.patch("pdf_concatenator.pdf_build.canvas.Canvas", CapturingCanvas)
+        _render_cover_page(
+            "reports/jan.pdf",
+            None,
+            2,
+            include_summaries=False,
+            cover_background=(1.0, 0.0, 0.0),
+        )
+
+        assert rect_fills
+        background_color, rect = rect_fills[0]
+        assert background_color == colors.Color(1.0, 0.0, 0.0)
+        assert rect == (0, 0, PAGE_WIDTH, PAGE_HEIGHT)
 
     def test_summary_disclaimer_on_toc_and_cover_when_including_summaries(
         self, two_doc_tree: TreeFixture, tmp_path: Path
@@ -267,3 +351,33 @@ class TestBuildConcatenatedPdf:
         toc_text = reader.pages[0].extract_text() or ""
         assert "Part 2" in toc_text
         assert "14_08_03.pdf" in toc_text
+
+    def test_multiline_summary_does_not_overlap_next_row(self, mocker):
+        from pdf_concatenator.pdf_build import _render_toc_pages
+
+        long_summary = (
+            "An acknowledgment from Estates & Management Ltd confirming that a "
+            "request for paperless billing has been received and will be processed "
+            "within the next billing cycle for the named leaseholder account."
+        )
+        rows = [
+            (0, "first-document.pdf", True, "16", long_summary),
+            (0, "second-document.pdf", True, "18", "Short summary."),
+        ]
+        draws: list[tuple[float, str]] = []
+        original_canvas = __import__(
+            "reportlab.pdfgen.canvas", fromlist=["Canvas"]
+        ).Canvas
+
+        class CapturingCanvas(original_canvas):
+            def drawString(self, x, y, text, **kwargs):
+                draws.append((y, text))
+                return super().drawString(x, y, text, **kwargs)
+
+        mocker.patch("pdf_concatenator.pdf_build.canvas.Canvas", CapturingCanvas)
+        _render_toc_pages(rows, include_summaries=True)
+
+        first_summary_ys = [y for y, text in draws if "acknowledgment" in text]
+        second_label_y = next(y for y, text in draws if text == "second-document.pdf")
+        assert first_summary_ys
+        assert second_label_y < min(first_summary_ys)

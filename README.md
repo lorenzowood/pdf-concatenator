@@ -10,6 +10,7 @@ This tool was built to pull together a large set of PDFs for a **contract submis
 - Sort files by path and concatenate them into one output PDF
 - Generate a **table of contents** with folder structure, page numbers, and alternating row shading
 - Insert a **cover page** before each source PDF (path, optional summary, page number)
+- Tinted **background colours** on contents and cover pages so they stand out when scrolling (default: legal-pad yellow)
 - Optionally generate **LLM summaries** via a sidecar file per PDF (`*.pdf.sidecar.json`)
 - Regenerate sidecars without concatenating (`--regenerate-summaries`)
 - Exclude specific files or patterns (`--exclude`)
@@ -70,6 +71,17 @@ pdf-concatenator -o submission.pdf \
 
 Patterns can be a directory (all PDFs beneath it) or a glob, e.g. `contracts/**/*.pdf`.
 
+Customise the tinted backgrounds on contents and cover pages (hex colours, default `#f3f2a3`):
+
+```bash
+pdf-concatenator -o submission.pdf \
+  --contents-background "#f3f2a3" \
+  --cover-background "#f3f2a3" \
+  contracts/
+```
+
+Alternating row stripes in the contents are derived from the contents background (5% black overlay), so they stay readable on any colour.
+
 ## LLM configuration
 
 When using `--include-summaries` or `--regenerate-summaries`, create `~/.config/pdf-concatenator`:
@@ -88,8 +100,8 @@ Summaries are stored beside each PDF as `document.pdf.sidecar.json` and reused w
 
 ## Output structure
 
-1. **Contents** — tree of folders and files; page numbers point to each document's cover page. When summaries are included, a disclaimer appears in the footer.
-2. **Cover page** per PDF — relative path, optional summary, page number.
+1. **Contents** — tree of folders and files; page numbers point to each document's cover page. Alternating rows are shaded. When summaries are included, a disclaimer appears in the footer.
+2. **Cover page** per PDF — relative path, optional summary, page number. Both contents and cover pages use a tinted background (legal-pad yellow by default).
 3. **Original PDF pages** — unchanged (no added page numbers).
 
 If any PDF cannot be read, or summary generation fails when required, the run aborts and no output file is produced.
@@ -115,6 +127,8 @@ usage: pdf-concatenator [-h] [-o filename] [--include-summaries]
                         [--regenerate-summaries] [--exclude pattern]
                         [--config CONFIG] [--verbose]
                         [--max-output-size SIZE]
+                        [--contents-background color]
+                        [--cover-background color]
                         pattern
 ```
 
@@ -127,6 +141,8 @@ usage: pdf-concatenator [-h] [-o filename] [--include-summaries]
 | `--config` | Path to LLM config (default: `~/.config/pdf-concatenator`) |
 | `--verbose` | Show library warnings while reading/merging PDFs |
 | `--max-output-size` | Split output into parts under this size (e.g. `50M`, `2G`) |
+| `--contents-background` | Background colour for contents pages (default: `#f3f2a3`) |
+| `--cover-background` | Background colour for cover pages (default: `#f3f2a3`) |
 
 ## Development
 

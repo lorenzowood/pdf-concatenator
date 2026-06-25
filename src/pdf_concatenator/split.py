@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from pdf_concatenator.color_parse import DEFAULT_BACKGROUND_RGB
 from pdf_concatenator.pdf_build import (
     DocumentInfo,
     PdfBuildError,
@@ -66,6 +67,9 @@ def _build_part_bytes(
     all_documents: list[DocumentInfo],
     include_summaries: bool,
     part_number: int,
+    *,
+    contents_background: tuple[float, float, float] = DEFAULT_BACKGROUND_RGB,
+    cover_background: tuple[float, float, float] = DEFAULT_BACKGROUND_RGB,
 ) -> bytes:
     total_parts = len(groups)
     part_docs = groups[part_number - 1]
@@ -81,6 +85,8 @@ def _build_part_bytes(
         include_summaries,
         all_documents=all_documents,
         split=split,
+        contents_background=contents_background,
+        cover_background=cover_background,
     )
 
 
@@ -89,6 +95,9 @@ def _build_and_rebalance(
     all_documents: list[DocumentInfo],
     include_summaries: bool,
     max_bytes: int,
+    *,
+    contents_background: tuple[float, float, float] = DEFAULT_BACKGROUND_RGB,
+    cover_background: tuple[float, float, float] = DEFAULT_BACKGROUND_RGB,
 ) -> list[bytes]:
     built: list[bytes | None] = [None] * len(groups)
     index = 0
@@ -104,6 +113,8 @@ def _build_and_rebalance(
                 all_documents,
                 include_summaries,
                 part_number=index + 1,
+                contents_background=contents_background,
+                cover_background=cover_background,
             )
             if len(data) <= max_bytes:
                 built[index] = data
@@ -135,6 +146,9 @@ def build_split_outputs(
     output_path: Path,
     include_summaries: bool,
     max_bytes: int,
+    *,
+    contents_background: tuple[float, float, float] = DEFAULT_BACKGROUND_RGB,
+    cover_background: tuple[float, float, float] = DEFAULT_BACKGROUND_RGB,
 ) -> list[Path]:
     _log("Planning parts by size...")
     groups = _greedy_plan(all_documents, include_summaries, max_bytes)
@@ -150,6 +164,8 @@ def build_split_outputs(
         all_documents,
         include_summaries,
         max_bytes,
+        contents_background=contents_background,
+        cover_background=cover_background,
     )
     paths = part_output_paths(output_path, total_parts)
 

@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from pypdf import PdfReader, PdfWriter
+from pdf_concatenator.color_parse import DEFAULT_BACKGROUND_RGB, tint_with_black
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfbase import pdfmetrics
@@ -19,13 +20,14 @@ ROW_HEIGHT = 16
 LABEL_LINE_HEIGHT = 14
 LABEL_BASELINE_FROM_TOP = 12
 SUMMARY_LINE_HEIGHT = 12
+ROW_BOTTOM_PADDING = 4
 INDENT_PER_LEVEL = 14
 RIGHT_COLUMN_RESERVE = 52
 LABEL_FONT = "Helvetica"
 LABEL_FONT_SIZE = 11
 SUMMARY_FONT = "Helvetica"
 SUMMARY_FONT_SIZE = 9
-GREY = colors.Color(0.95, 0.95, 0.95)
+ROW_STRIPE_BLACK_OPACITY = 0.05
 SUMMARY_DISCLAIMER = "Summaries are generated automatically and may contain errors."
 
 
@@ -186,6 +188,32 @@ def _summary_lines(
     return _wrap_text_to_width(summary, SUMMARY_FONT, SUMMARY_FONT_SIZE, width)
 
 
+def _toc_row_layout(
+    depth: int,
+    label: str,
+    is_file: bool,
+    right_column: str | None,
+    summary: str | None,
+    include_summaries: bool,
+) -> tuple[list[str], list[str], int]:
+    label_lines = _label_lines(depth, label, is_file, right_column)
+    has_right_column = right_column is not None
+    summary_lines = (
+        _summary_lines(depth, summary, has_right_column)
+        if include_summaries and is_file and summary
+        else []
+    )
+
+    height = LABEL_BASELINE_FROM_TOP + max(0, len(label_lines) - 1) * LABEL_LINE_HEIGHT
+    if summary_lines:
+        height += len(summary_lines) * SUMMARY_LINE_HEIGHT
+    else:
+        height = max(height, ROW_HEIGHT)
+    height += ROW_BOTTOM_PADDING
+
+    return label_lines, summary_lines, height
+
+
 def _row_block_height(
     depth: int,
     label: str,
@@ -194,14 +222,22 @@ def _row_block_height(
     summary: str | None,
     include_summaries: bool,
 ) -> int:
-    label_line_count = len(_label_lines(depth, label, is_file, right_column))
-    height = ROW_HEIGHT + max(0, label_line_count - 1) * LABEL_LINE_HEIGHT
-    if include_summaries and is_file and summary:
-        height += (
-            len(_summary_lines(depth, summary, bool(right_column)))
-            * SUMMARY_LINE_HEIGHT
-        )
+    _, _, height = _toc_row_layout(
+        depth, label, is_file, right_column, summary, include_summaries
+    )
     return height
+
+
+def _draw_page_background(
+    c: canvas.Canvas, background: tuple[float, float, float]
+) -> None:
+    c.setFillColor(colors.Color(*background))
+    c.rect(0, 0, PAGE_WIDTH, PAGE_HEIGHT, fill=1, stroke=0)
+    c.setFillColor(colors.black)
+
+
+def _row_stripe_color(background: tuple[float, float, float]) -> colors.Color:
+    return colors.Color(*tint_with_black(background, ROW_STRIPE_BLACK_OPACITY))
 
 
 def _draw_page_footer(
@@ -219,6 +255,7 @@ def _render_toc_pages(
     include_summaries: bool,
     *,
     split: SplitContext | None = None,
+    contents_background: tuple[float, float, float] = DEFAULT_BACKGROUND_RGB,
 ) -> PdfReader:
     buffer = io.BytesIO()
     page_count = 0
@@ -228,6 +265,7 @@ def _render_toc_pages(
     def start_page(c: canvas.Canvas) -> float:
         nonlocal page_count, y
         page_count += 1
+        _draw_page_background(c, contents_background)
         y = PAGE_HEIGHT - MARGIN
         if page_count == 1:
             c.setFont("Helvetica-Bold", 16)
@@ -265,28 +303,28 @@ def _render_toc_pages(
         row_bottom = y - block_height
 
         if row_index % 2 == 1:
-            c.setFillColor(GREY)
+            c.setFillColor(_row_stripe_color(contents_background))
             c.rect(0, row_bottom, PAGE_WIDTH, block_height, fill=1, stroke=0)
             c.setFillColor(colors.black)
 
         x = MARGIN + depth * INDENT_PER_LEVEL
+        label_lines, summary_lines, _ = _toc_row_layout(
+            depth, label, is_file, right_column, summary, include_summaries
+        )
         label_baseline = row_top - LABEL_BASELINE_FROM_TOP
         c.setFont(LABEL_FONT, LABEL_FONT_SIZE)
-        for line_index, line in enumerate(
-            _label_lines(depth, label, is_file, right_column)
-        ):
+        for line_index, line in enumerate(label_lines):
             c.drawString(x, label_baseline - line_index * LABEL_LINE_HEIGHT, line)
         if is_file and right_column is not None:
             c.drawRightString(PAGE_WIDTH - MARGIN, label_baseline, right_column)
 
-        summary_baseline = label_baseline - len(
-            _label_lines(depth, label, is_file, right_column)
-        ) * LABEL_LINE_HEIGHT
-        if include_summaries and is_file and summary:
+        if summary_lines:
+            last_label_baseline = label_baseline - (len(label_lines) - 1) * LABEL_LINE_HEIGHT
+            summary_baseline = last_label_baseline - SUMMARY_LINE_HEIGHT
             c.setFont(SUMMARY_FONT, SUMMARY_FONT_SIZE)
-            for line in _summary_lines(depth, summary, bool(right_column)):
-                summary_baseline -= SUMMARY_LINE_HEIGHT
+            for line in summary_lines:
                 c.drawString(x + INDENT_PER_LEVEL, summary_baseline, line)
+                summary_baseline -= SUMMARY_LINE_HEIGHT
 
         y = row_bottom
         row_index += 1
@@ -302,9 +340,12 @@ def _render_cover_page(
     summary: str | None,
     page_number: int,
     include_summaries: bool,
+    *,
+    cover_background: tuple[float, float, float] = DEFAULT_BACKGROUND_RGB,
 ) -> PdfReader:
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=letter)
+    _draw_page_background(c, cover_background)
     c.setFont("Helvetica-Bold", 14)
     y = PAGE_HEIGHT - MARGIN
     for line in _wrap_text(relative_path, 60):
@@ -352,6 +393,8 @@ def _build_pdf_bytes(
     *,
     all_documents: list[DocumentInfo] | None = None,
     split: SplitContext | None = None,
+    contents_background: tuple[float, float, float] = DEFAULT_BACKGROUND_RGB,
+    cover_background: tuple[float, float, float] = DEFAULT_BACKGROUND_RGB,
 ) -> bytes:
     if not part_documents:
         raise PdfBuildError("No documents to concatenate")
@@ -374,7 +417,12 @@ def _build_pdf_bytes(
 
         rows: list[tuple[int, str, bool, str | None, str | None]] = []
         _flatten_toc_rows(root, 0, rows)
-        toc_reader = _render_toc_pages(rows, include_summaries, split=split)
+        toc_reader = _render_toc_pages(
+            rows,
+            include_summaries,
+            split=split,
+            contents_background=contents_background,
+        )
         actual = len(toc_reader.pages)
         if actual == toc_page_count:
             break
@@ -395,7 +443,12 @@ def _build_pdf_bytes(
 
     rows = []
     _flatten_toc_rows(root, 0, rows)
-    toc_reader = _render_toc_pages(rows, include_summaries, split=split)
+    toc_reader = _render_toc_pages(
+        rows,
+        include_summaries,
+        split=split,
+        contents_background=contents_background,
+    )
 
     writer = PdfWriter()
     for page in toc_reader.pages:
@@ -408,6 +461,7 @@ def _build_pdf_bytes(
             doc.summary,
             cover_num,
             include_summaries,
+            cover_background=cover_background,
         )
         writer.add_page(cover_reader.pages[0])
         source = PdfReader(str(doc.path))
@@ -426,12 +480,16 @@ def build_concatenated_pdf(
     *,
     all_documents: list[DocumentInfo] | None = None,
     split: SplitContext | None = None,
+    contents_background: tuple[float, float, float] = DEFAULT_BACKGROUND_RGB,
+    cover_background: tuple[float, float, float] = DEFAULT_BACKGROUND_RGB,
 ) -> None:
     data = _build_pdf_bytes(
         documents,
         include_summaries,
         all_documents=all_documents,
         split=split,
+        contents_background=contents_background,
+        cover_background=cover_background,
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_bytes(data)
@@ -476,6 +534,9 @@ def measure_part_size(
     all_documents: list[DocumentInfo],
     include_summaries: bool,
     part_number: int,
+    *,
+    contents_background: tuple[float, float, float] = DEFAULT_BACKGROUND_RGB,
+    cover_background: tuple[float, float, float] = DEFAULT_BACKGROUND_RGB,
 ) -> int:
     part_documents = groups[part_number - 1]
     split = _split_context_for_groups(groups, all_documents, part_number)
@@ -485,5 +546,7 @@ def measure_part_size(
             include_summaries,
             all_documents=all_documents,
             split=split,
+            contents_background=contents_background,
+            cover_background=cover_background,
         )
     )

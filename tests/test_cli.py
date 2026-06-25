@@ -41,6 +41,36 @@ class TestConcatenateCli:
         )
         assert args.verbose is True
 
+    def test_background_color_flags_are_accepted(self, doc_tree: Path, tmp_path: Path):
+        from pdf_concatenator.cli import build_parser
+
+        args = build_parser().parse_args(
+            [
+                "-o",
+                str(tmp_path / "out.pdf"),
+                "--contents-background",
+                "#ff0000",
+                "--cover-background",
+                "#00ff00",
+                str(doc_tree),
+            ]
+        )
+        assert args.contents_background == "#ff0000"
+        assert args.cover_background == "#00ff00"
+
+    def test_invalid_background_color_fails(self, doc_tree: Path, tmp_path: Path):
+        code = main(
+            [
+                "-o",
+                str(tmp_path / "out.pdf"),
+                "--contents-background",
+                "not-a-color",
+                str(doc_tree),
+            ]
+        )
+        assert code == 1
+        assert not (tmp_path / "out.pdf").exists()
+
     def test_concatenates_without_summaries(self, doc_tree: Path, tmp_path: Path):
         output = tmp_path / "combined.pdf"
         code = main(["-o", str(output), str(doc_tree)])

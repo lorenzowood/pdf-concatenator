@@ -5,6 +5,7 @@ import logging
 import sys
 from pathlib import Path
 
+from pdf_concatenator.color_parse import DEFAULT_BACKGROUND, ColorParseError, parse_color
 from pdf_concatenator.config import ConfigError, DEFAULT_CONFIG_PATH
 from pdf_concatenator.discovery import DiscoveredPdf, discover_pdfs
 from pdf_concatenator.llm import LlmError
@@ -56,6 +57,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--max-output-size",
         metavar="SIZE",
         help="Split output into parts no larger than SIZE (e.g. 50M, 2G)",
+    )
+    parser.add_argument(
+        "--contents-background",
+        default=DEFAULT_BACKGROUND,
+        metavar="color",
+        help="Background color for contents pages (default: #f3f2a3)",
+    )
+    parser.add_argument(
+        "--cover-background",
+        default=DEFAULT_BACKGROUND,
+        metavar="color",
+        help="Background color for cover pages (default: #f3f2a3)",
     )
     parser.add_argument("pattern", help="Directory or glob pattern for PDF files")
     return parser
@@ -141,10 +154,26 @@ def _regenerate_summaries(args: argparse.Namespace) -> int:
     return 0
 
 
+def _parse_page_backgrounds(args: argparse.Namespace) -> tuple[tuple[float, float, float], tuple[float, float, float]] | None:
+    try:
+        return (
+            parse_color(args.contents_background),
+            parse_color(args.cover_background),
+        )
+    except ColorParseError as exc:
+        print(str(exc), file=sys.stderr)
+        return None
+
+
 def _concatenate(args: argparse.Namespace) -> int:
     pdfs = _discover(args)
     if pdfs is None:
         return 1
+
+    backgrounds = _parse_page_backgrounds(args)
+    if backgrounds is None:
+        return 1
+    contents_background, cover_background = backgrounds
 
     output_path = Path(args.output)
     config = None
@@ -187,6 +216,8 @@ def _concatenate(args: argparse.Namespace) -> int:
                 output_path,
                 include_summaries=args.include_summaries,
                 max_bytes=max_bytes,
+                contents_background=contents_background,
+                cover_background=cover_background,
             )
             if len(paths) > 1:
                 for path in paths:
@@ -197,6 +228,8 @@ def _concatenate(args: argparse.Namespace) -> int:
                 documents,
                 output_path,
                 include_summaries=args.include_summaries,
+                contents_background=contents_background,
+                cover_background=cover_background,
             )
     except PdfBuildError as exc:
         print(str(exc), file=sys.stderr)
