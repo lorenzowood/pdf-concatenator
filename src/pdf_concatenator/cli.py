@@ -182,6 +182,7 @@ def _concatenate(args: argparse.Namespace) -> int:
     try:
         if args.max_output_size:
             max_bytes = parse_max_output_size(args.max_output_size)
+            print("Building concatenated PDF(s)...", file=sys.stderr, flush=True)
             paths = build_split_outputs(
                 documents,
                 output_path,
@@ -192,6 +193,7 @@ def _concatenate(args: argparse.Namespace) -> int:
                 for path in paths:
                     print(path)
         else:
+            print("Building concatenated PDF...", file=sys.stderr, flush=True)
             build_concatenated_pdf(
                 documents,
                 output_path,

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
+
+from tqdm import tqdm
 
 from pdf_concatenator.pdf_build import (
     DocumentInfo,
@@ -9,6 +12,7 @@ from pdf_concatenator.pdf_build import (
     _build_pdf_bytes,
     measure_part_size,
 )
+from pdf_concatenator.size_estimate import estimate_part_bytes, estimate_total_parts
 
 
 def part_output_paths(base: Path, total_parts: int) -> list[Path]:
@@ -20,14 +24,6 @@ def part_output_paths(base: Path, total_parts: int) -> list[Path]:
     ]
 
 
-def _assignment_from_groups(groups: list[list[DocumentInfo]]) -> dict[str, int]:
-    assignment: dict[str, int] = {}
-    for index, group in enumerate(groups, start=1):
-        for doc in group:
-            assignment[doc.relative_path] = index
-    return assignment
-
-
 def _plan_parts(
     all_documents: list[DocumentInfo],
     include_summaries: bool,
@@ -37,17 +33,19 @@ def _plan_parts(
     groups: list[list[DocumentInfo]] = [[]]
 
     for doc in sorted_docs:
-        trial_groups = groups[:-1] + [groups[-1] + [doc]]
-        size = measure_part_size(
-            trial_groups,
+        trial = groups[-1] + [doc]
+        trial_groups = groups[:-1] + [trial]
+        total_parts = estimate_total_parts(trial_groups, all_documents)
+        size = estimate_part_bytes(
+            trial,
             all_documents,
             include_summaries,
-            part_number=len(trial_groups),
+            total_parts=total_parts,
         )
         if groups[-1] and size > max_bytes:
             groups.append([doc])
         else:
-            groups[-1] = groups[-1] + [doc]
+            groups[-1] = trial
 
     return _rebalance_groups(groups, all_documents, include_summaries, max_bytes)
 
@@ -100,12 +98,28 @@ def build_split_outputs(
     include_summaries: bool,
     max_bytes: int,
 ) -> list[Path]:
+    print("Planning parts by size...", file=sys.stderr, flush=True)
     groups = _plan_parts(all_documents, include_summaries, max_bytes)
     total_parts = len(groups)
     paths = part_output_paths(output_path, total_parts)
     document_parts = _document_parts_from_groups(groups)
 
-    for part_number, (path, part_docs) in enumerate(zip(paths, groups), start=1):
+    if total_parts > 1:
+        print(
+            f"Verifying and building {total_parts} parts...",
+            file=sys.stderr,
+            flush=True,
+        )
+
+    progress = tqdm(
+        list(enumerate(zip(paths, groups), start=1)),
+        desc="Building parts",
+        unit="part",
+        disable=not sys.stderr.isatty(),
+        file=sys.stderr,
+    )
+    written: list[Path] = []
+    for part_number, (path, part_docs) in progress:
         split = SplitContext(
             part_number=part_number,
             total_parts=total_parts,
@@ -121,8 +135,10 @@ def build_split_outputs(
         )
         if path.stat().st_size > max_bytes:
             raise PdfBuildError(f"Output part exceeds max size: {path.name}")
+        written.append(path)
+        progress.set_postfix_str(path.name, refresh=False)
 
-    return paths
+    return written
 
 
 def parse_max_output_size(value: str) -> int:
