@@ -137,7 +137,7 @@ class TestBuildConcatenatedPdf:
     def test_toc_pages_have_footer_page_numbers(self, mocker):
         from pdf_concatenator.pdf_build import MARGIN, _render_toc_pages
 
-        rows = [(0, f"f{i}.pdf", True, i + 2, None) for i in range(4)]
+        rows = [(0, f"f{i}.pdf", True, str(i + 2), None) for i in range(4)]
         footer_calls: list[str] = []
         original_canvas = __import__(
             "reportlab.pdfgen.canvas", fromlist=["Canvas"]
@@ -157,7 +157,7 @@ class TestBuildConcatenatedPdf:
     def test_multipage_toc_has_numbered_footers(self, mocker):
         from pdf_concatenator.pdf_build import MARGIN, _render_toc_pages
 
-        rows = [(0, f"f{i}.pdf", True, i + 10, None) for i in range(50)]
+        rows = [(0, f"f{i}.pdf", True, str(i + 10), None) for i in range(50)]
         footer_calls: list[str] = []
         original_canvas = __import__(
             "reportlab.pdfgen.canvas", fromlist=["Canvas"]
@@ -183,7 +183,7 @@ class TestBuildConcatenatedPdf:
             _render_toc_pages,
         )
 
-        rows = [(0, f"f{i}.pdf", True, i + 2, None) for i in range(4)]
+        rows = [(0, f"f{i}.pdf", True, str(i + 2), None) for i in range(4)]
         rect_calls: list[tuple[float, float, float, float]] = []
         original_canvas = __import__(
             "reportlab.pdfgen.canvas", fromlist=["Canvas"]

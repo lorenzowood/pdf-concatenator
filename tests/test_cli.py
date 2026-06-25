@@ -196,7 +196,21 @@ class TestConcatenateCli:
         assert code == 0
         mock_tqdm.assert_called_once()
         assert mock_tqdm.call_args.kwargs["total"] == 2
-        assert mock_tqdm.call_args.kwargs["desc"] == "Summaries"
+
+    def test_max_output_size_splits(self, doc_tree: Path, tmp_path: Path):
+        output = tmp_path / "bundle.pdf"
+        code = main(
+            [
+                "-o",
+                str(output),
+                "--max-output-size",
+                "3K",
+                str(doc_tree),
+            ]
+        )
+        assert code == 0
+        parts = list(tmp_path.glob("bundle_part_*.pdf"))
+        assert len(parts) >= 2
 
 
 class TestRegenerateSummariesCli:

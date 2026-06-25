@@ -9,6 +9,7 @@ from pdf_concatenator.config import ConfigError, DEFAULT_CONFIG_PATH
 from pdf_concatenator.discovery import DiscoveredPdf, discover_pdfs
 from pdf_concatenator.llm import LlmError
 from pdf_concatenator.pdf_build import DocumentInfo, PdfBuildError, build_concatenated_pdf
+from pdf_concatenator.split import build_split_outputs, parse_max_output_size
 from pdf_concatenator.summaries import load_llm_config, resolve_sidecar
 from tqdm import tqdm
 
@@ -50,6 +51,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--verbose",
         action="store_true",
         help="Show library warnings while reading and merging PDFs",
+    )
+    parser.add_argument(
+        "--max-output-size",
+        metavar="SIZE",
+        help="Split output into parts no larger than SIZE (e.g. 50M, 2G)",
     )
     parser.add_argument("pattern", help="Directory or glob pattern for PDF files")
     return parser
@@ -174,15 +180,29 @@ def _concatenate(args: argparse.Namespace) -> int:
         )
 
     try:
-        build_concatenated_pdf(
-            documents,
-            output_path,
-            include_summaries=args.include_summaries,
-        )
+        if args.max_output_size:
+            max_bytes = parse_max_output_size(args.max_output_size)
+            paths = build_split_outputs(
+                documents,
+                output_path,
+                include_summaries=args.include_summaries,
+                max_bytes=max_bytes,
+            )
+            if len(paths) > 1:
+                for path in paths:
+                    print(path)
+        else:
+            build_concatenated_pdf(
+                documents,
+                output_path,
+                include_summaries=args.include_summaries,
+            )
     except PdfBuildError as exc:
         print(str(exc), file=sys.stderr)
         if output_path.exists():
             output_path.unlink()
+        for part_path in output_path.parent.glob(f"{output_path.stem}_part_*{output_path.suffix}"):
+            part_path.unlink(missing_ok=True)
         return 1
 
     return 0

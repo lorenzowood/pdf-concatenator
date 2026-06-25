@@ -94,12 +94,27 @@ Summaries are stored beside each PDF as `document.pdf.sidecar.json` and reused w
 
 If any PDF cannot be read, or summary generation fails when required, the run aborts and no output file is produced.
 
+## Splitting large outputs
+
+Upload limits (e.g. 50 MB) can be handled by splitting:
+
+```bash
+pdf-concatenator -o submission.pdf --max-output-size 50M contracts/
+```
+
+This produces `submission_part_1.pdf`, `submission_part_2.pdf`, and so on. Each part stays under the limit. Every part includes the **full table of contents**; entries in other parts are labelled `Part 2`, `Part 3`, etc. Under the **Contents** heading, each part also notes:
+
+> This archive is split into n parts. This is part m.
+
+If everything fits in one file, the original output name is used with no `_part_` suffix.
+
 ## Options
 
 ```
 usage: pdf-concatenator [-h] [-o filename] [--include-summaries]
                         [--regenerate-summaries] [--exclude pattern]
                         [--config CONFIG] [--verbose]
+                        [--max-output-size SIZE]
                         pattern
 ```
 
@@ -111,6 +126,7 @@ usage: pdf-concatenator [-h] [-o filename] [--include-summaries]
 | `--exclude` | Glob pattern to exclude (repeatable) |
 | `--config` | Path to LLM config (default: `~/.config/pdf-concatenator`) |
 | `--verbose` | Show library warnings while reading/merging PDFs |
+| `--max-output-size` | Split output into parts under this size (e.g. `50M`, `2G`) |
 
 ## Development
 
