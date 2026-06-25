@@ -12,9 +12,14 @@ from reportlab.pdfgen import canvas
 
 PAGE_WIDTH, PAGE_HEIGHT = letter
 MARGIN = 54  # 0.75 inch
+FOOTER_HEIGHT = 14
+CONTENT_BOTTOM = MARGIN + FOOTER_HEIGHT
 ROW_HEIGHT = 16
+LABEL_BASELINE_FROM_TOP = 12
+SUMMARY_LINE_HEIGHT = 12
 INDENT_PER_LEVEL = 14
 GREY = colors.Color(0.95, 0.95, 0.95)
+SUMMARY_DISCLAIMER = "Summaries are generated automatically and may contain errors."
 
 
 @dataclass(frozen=True)
@@ -96,6 +101,27 @@ def _wrap_text(text: str, max_chars: int) -> list[str]:
     return lines or [""]
 
 
+def _row_block_height(
+    is_file: bool,
+    summary: str | None,
+    include_summaries: bool,
+) -> int:
+    height = ROW_HEIGHT
+    if include_summaries and is_file and summary:
+        height += len(_wrap_text(summary, 70)) * SUMMARY_LINE_HEIGHT
+    return height
+
+
+def _draw_page_footer(
+    c: canvas.Canvas, page_number: int, *, include_summaries: bool
+) -> None:
+    c.setFont("Helvetica", 10)
+    c.setFillColor(colors.black)
+    if include_summaries:
+        c.drawString(MARGIN, MARGIN, SUMMARY_DISCLAIMER)
+    c.drawRightString(PAGE_WIDTH - MARGIN, MARGIN, str(page_number))
+
+
 def _render_toc_pages(
     rows: list[tuple[int, str, bool, int | None, str | None]],
     include_summaries: bool,
@@ -115,40 +141,45 @@ def _render_toc_pages(
             return y - 28
         return y
 
+    def end_page(c: canvas.Canvas) -> None:
+        _draw_page_footer(c, page_count, include_summaries=include_summaries)
+
     c = canvas.Canvas(buffer, pagesize=letter)
     y = start_page(c)
 
     for depth, label, is_file, page_num, summary in rows:
-        summary_lines = 0
-        if include_summaries and is_file and summary:
-            summary_lines = len(_wrap_text(summary, 70))
-
-        block_height = ROW_HEIGHT + summary_lines * 12
-        if y - block_height < MARGIN:
+        block_height = _row_block_height(is_file, summary, include_summaries)
+        if y - block_height < CONTENT_BOTTOM:
+            end_page(c)
             c.showPage()
             y = start_page(c)
 
+        row_top = y
+        row_bottom = y - block_height
+
         if row_index % 2 == 1:
             c.setFillColor(GREY)
-            c.rect(0, y - block_height + 4, PAGE_WIDTH, block_height, fill=1, stroke=0)
+            c.rect(0, row_bottom, PAGE_WIDTH, block_height, fill=1, stroke=0)
             c.setFillColor(colors.black)
 
         x = MARGIN + depth * INDENT_PER_LEVEL
+        label_baseline = row_top - LABEL_BASELINE_FROM_TOP
         c.setFont("Helvetica", 11)
-        c.drawString(x, y, label)
+        c.drawString(x, label_baseline, label)
         if is_file and page_num is not None:
-            c.drawRightString(PAGE_WIDTH - MARGIN, y, str(page_num))
+            c.drawRightString(PAGE_WIDTH - MARGIN, label_baseline, str(page_num))
 
-        line_y = y - 12
+        summary_baseline = label_baseline - SUMMARY_LINE_HEIGHT
         if include_summaries and is_file and summary:
             c.setFont("Helvetica", 9)
             for line in _wrap_text(summary, 70):
-                c.drawString(x + INDENT_PER_LEVEL, line_y, line)
-                line_y -= 12
+                c.drawString(x + INDENT_PER_LEVEL, summary_baseline, line)
+                summary_baseline -= SUMMARY_LINE_HEIGHT
 
-        y -= block_height
+        y = row_bottom
         row_index += 1
 
+    end_page(c)
     c.save()
     buffer.seek(0)
     return PdfReader(buffer)
@@ -176,7 +207,7 @@ def _render_cover_page(
             y -= 14
 
     c.setFont("Helvetica", 10)
-    c.drawRightString(PAGE_WIDTH - MARGIN, MARGIN, str(page_number))
+    _draw_page_footer(c, page_number, include_summaries=include_summaries)
     c.showPage()
     c.save()
     buffer.seek(0)

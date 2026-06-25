@@ -133,3 +133,103 @@ class TestBuildConcatenatedPdf:
         ]
         with pytest.raises(Exception):
             build_concatenated_pdf(docs, tmp_path / "out.pdf", include_summaries=False)
+
+    def test_toc_pages_have_footer_page_numbers(self, mocker):
+        from pdf_concatenator.pdf_build import MARGIN, _render_toc_pages
+
+        rows = [(0, f"f{i}.pdf", True, i + 2, None) for i in range(4)]
+        footer_calls: list[str] = []
+        original_canvas = __import__(
+            "reportlab.pdfgen.canvas", fromlist=["Canvas"]
+        ).Canvas
+
+        class CapturingCanvas(original_canvas):
+            def drawRightString(self, x, y, text, **kwargs):
+                if y == MARGIN:
+                    footer_calls.append(text)
+                return super().drawRightString(x, y, text, **kwargs)
+
+        mocker.patch("pdf_concatenator.pdf_build.canvas.Canvas", CapturingCanvas)
+        _render_toc_pages(rows, include_summaries=False)
+
+        assert footer_calls == ["1"]
+
+    def test_multipage_toc_has_numbered_footers(self, mocker):
+        from pdf_concatenator.pdf_build import MARGIN, _render_toc_pages
+
+        rows = [(0, f"f{i}.pdf", True, i + 10, None) for i in range(50)]
+        footer_calls: list[str] = []
+        original_canvas = __import__(
+            "reportlab.pdfgen.canvas", fromlist=["Canvas"]
+        ).Canvas
+
+        class CapturingCanvas(original_canvas):
+            def drawRightString(self, x, y, text, **kwargs):
+                if y == MARGIN:
+                    footer_calls.append(text)
+                return super().drawRightString(x, y, text, **kwargs)
+
+        mocker.patch("pdf_concatenator.pdf_build.canvas.Canvas", CapturingCanvas)
+        reader = _render_toc_pages(rows, include_summaries=False)
+
+        assert len(reader.pages) >= 2
+        assert footer_calls == [str(i) for i in range(1, len(reader.pages) + 1)]
+
+    def test_toc_row_backgrounds_tile_without_gaps(self, mocker):
+        from pdf_concatenator.pdf_build import (
+            MARGIN,
+            PAGE_HEIGHT,
+            ROW_HEIGHT,
+            _render_toc_pages,
+        )
+
+        rows = [(0, f"f{i}.pdf", True, i + 2, None) for i in range(4)]
+        rect_calls: list[tuple[float, float, float, float]] = []
+        original_canvas = __import__(
+            "reportlab.pdfgen.canvas", fromlist=["Canvas"]
+        ).Canvas
+
+        class CapturingCanvas(original_canvas):
+            def rect(self, x, y, width, height, **kwargs):
+                rect_calls.append((x, y, width, height))
+                return super().rect(x, y, width, height, **kwargs)
+
+        mocker.patch("pdf_concatenator.pdf_build.canvas.Canvas", CapturingCanvas)
+        _render_toc_pages(rows, include_summaries=False)
+
+        first_row_top = PAGE_HEIGHT - MARGIN - 28
+        first_row_bottom = first_row_top - ROW_HEIGHT
+
+        assert len(rect_calls) == 2
+        assert rect_calls[0][1] == pytest.approx(first_row_bottom - ROW_HEIGHT)
+        assert rect_calls[0][3] == ROW_HEIGHT
+        assert rect_calls[1][1] == pytest.approx(first_row_bottom - 3 * ROW_HEIGHT)
+        assert rect_calls[1][3] == ROW_HEIGHT
+
+    def test_summary_disclaimer_on_toc_and_cover_when_including_summaries(
+        self, two_doc_tree: TreeFixture, tmp_path: Path
+    ):
+        docs = [
+            DocumentInfo(
+                path=two_doc_tree.docs[0].path,
+                relative_path=two_doc_tree.docs[0].relative_path,
+                title="January Report",
+                summary="January blurb.",
+            ),
+            two_doc_tree.docs[1],
+        ]
+        output = tmp_path / "out.pdf"
+        build_concatenated_pdf(docs, output, include_summaries=True)
+        reader = PdfReader(str(output))
+        disclaimer = "Summaries are generated automatically"
+        assert disclaimer in (reader.pages[0].extract_text() or "")
+        assert disclaimer in (reader.pages[1].extract_text() or "")
+
+    def test_no_summary_disclaimer_without_summaries(
+        self, two_doc_tree: TreeFixture, tmp_path: Path
+    ):
+        output = tmp_path / "out.pdf"
+        build_concatenated_pdf(two_doc_tree.docs, output, include_summaries=False)
+        reader = PdfReader(str(output))
+        full_text = "".join(page.extract_text() or "" for page in reader.pages)
+        assert "generated automatically" not in full_text

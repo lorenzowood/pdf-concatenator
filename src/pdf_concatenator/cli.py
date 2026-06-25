@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 from pathlib import Path
 
 from pdf_concatenator.config import ConfigError, DEFAULT_CONFIG_PATH
-from pdf_concatenator.discovery import discover_pdfs
+from pdf_concatenator.discovery import DiscoveredPdf, discover_pdfs
 from pdf_concatenator.llm import LlmError
 from pdf_concatenator.pdf_build import DocumentInfo, PdfBuildError, build_concatenated_pdf
 from pdf_concatenator.summaries import load_llm_config, resolve_sidecar
+from tqdm import tqdm
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -44,8 +46,35 @@ def build_parser() -> argparse.ArgumentParser:
         default=str(DEFAULT_CONFIG_PATH),
         help="Path to LLM config file",
     )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Show library warnings while reading and merging PDFs",
+    )
     parser.add_argument("pattern", help="Directory or glob pattern for PDF files")
     return parser
+
+
+def _configure_logging(verbose: bool) -> None:
+    level = logging.WARNING if verbose else logging.ERROR
+    logging.getLogger("pypdf").setLevel(level)
+
+
+def _summary_progress(
+    pdfs: list[DiscoveredPdf],
+    *,
+    disable: bool | None = None,
+):
+    if disable is None:
+        disable = not sys.stderr.isatty()
+    return tqdm(
+        pdfs,
+        desc="Summaries",
+        unit="pdf",
+        total=len(pdfs),
+        disable=disable,
+        file=sys.stderr,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -55,6 +84,8 @@ def main(argv: list[str] | None = None) -> int:
     except SystemExit as exc:
         code = exc.code
         return int(code) if isinstance(code, int) else 1
+
+    _configure_logging(args.verbose)
 
     if args.regenerate_summaries:
         if args.output:
@@ -94,7 +125,7 @@ def _regenerate_summaries(args: argparse.Namespace) -> int:
         print(str(exc), file=sys.stderr)
         return 1
 
-    for pdf in pdfs:
+    for pdf in _summary_progress(pdfs):
         try:
             resolve_sidecar(pdf.path, config, force=True)
         except LlmError as exc:
@@ -119,7 +150,8 @@ def _concatenate(args: argparse.Namespace) -> int:
             return 1
 
     documents: list[DocumentInfo] = []
-    for pdf in pdfs:
+    summary_pdfs = pdfs if args.include_summaries else []
+    for pdf in _summary_progress(summary_pdfs) if summary_pdfs else pdfs:
         summary: str | None = None
         title = pdf.path.stem
         if args.include_summaries:

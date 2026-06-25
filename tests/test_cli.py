@@ -33,6 +33,14 @@ def llm_config(tmp_path: Path) -> Path:
 
 
 class TestConcatenateCli:
+    def test_verbose_flag_is_accepted(self, doc_tree: Path, tmp_path: Path):
+        from pdf_concatenator.cli import build_parser
+
+        args = build_parser().parse_args(
+            ["-o", str(tmp_path / "out.pdf"), "--verbose", str(doc_tree)]
+        )
+        assert args.verbose is True
+
     def test_concatenates_without_summaries(self, doc_tree: Path, tmp_path: Path):
         output = tmp_path / "combined.pdf"
         code = main(["-o", str(output), str(doc_tree)])
@@ -157,6 +165,39 @@ class TestConcatenateCli:
         assert code == 1
         assert not output.exists()
 
+    def test_no_progress_bar_without_summaries(self, doc_tree: Path, tmp_path: Path, mocker):
+        mock_tqdm = mocker.patch("pdf_concatenator.cli.tqdm")
+        output = tmp_path / "combined.pdf"
+        code = main(["-o", str(output), str(doc_tree)])
+        assert code == 0
+        mock_tqdm.assert_not_called()
+
+    def test_progress_bar_when_including_summaries(
+        self, doc_tree: Path, tmp_path: Path, llm_config: Path, mocker
+    ):
+        from pdf_concatenator.llm import TitleAndSummary
+
+        mocker.patch(
+            "pdf_concatenator.summaries.generate_title_and_summary",
+            return_value=TitleAndSummary(title="T", summary="S"),
+        )
+        mock_tqdm = mocker.patch("pdf_concatenator.cli.tqdm", side_effect=lambda it, **kw: it)
+        output = tmp_path / "combined.pdf"
+        code = main(
+            [
+                "-o",
+                str(output),
+                "--include-summaries",
+                "--config",
+                str(llm_config),
+                str(doc_tree),
+            ]
+        )
+        assert code == 0
+        mock_tqdm.assert_called_once()
+        assert mock_tqdm.call_args.kwargs["total"] == 2
+        assert mock_tqdm.call_args.kwargs["desc"] == "Summaries"
+
 
 class TestRegenerateSummariesCli:
     def test_regenerate_only_updates_sidecars(
@@ -215,3 +256,27 @@ class TestRegenerateSummariesCli:
             ]
         )
         assert code == 1
+
+    def test_progress_bar_when_regenerating_summaries(
+        self, doc_tree: Path, llm_config: Path, mocker
+    ):
+        from pdf_concatenator.llm import TitleAndSummary
+
+        mocker.patch(
+            "pdf_concatenator.summaries.generate_title_and_summary",
+            return_value=TitleAndSummary(title="T", summary="S"),
+        )
+        mock_tqdm = mocker.patch("pdf_concatenator.cli.tqdm", side_effect=lambda it, **kw: it)
+        code = main(
+            [
+                "--regenerate-summaries",
+                "--config",
+                str(llm_config),
+                "--exclude",
+                "b.pdf",
+                str(doc_tree),
+            ]
+        )
+        assert code == 0
+        mock_tqdm.assert_called_once()
+        assert mock_tqdm.call_args.kwargs["total"] == 1
