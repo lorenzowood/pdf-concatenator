@@ -31,17 +31,42 @@ def _glob_pattern(pattern: str) -> list[Path]:
     if path.is_dir():
         return sorted(path.rglob("*.pdf"))
     if any(ch in pattern for ch in "*?[]"):
-        return sorted(Path(p) for p in stdglob.glob(pattern, recursive=True))
+        matches = sorted({Path(p) for p in stdglob.glob(pattern, recursive=True)})
+        pdfs: list[Path] = []
+        for match in matches:
+            if match.is_dir():
+                pdfs.extend(sorted(match.rglob("*.pdf")))
+            elif match.is_file() and match.suffix.lower() == ".pdf":
+                pdfs.append(match)
+        return sorted({p for p in pdfs}, key=lambda p: p.as_posix())
     if path.is_file() and path.suffix.lower() == ".pdf":
         return [path]
     parent = path.parent if path.parent != Path(".") else Path()
     return sorted(parent.glob(pattern))
 
 
+def _is_within(path: Path, directory: Path) -> bool:
+    try:
+        path.resolve().relative_to(directory.resolve())
+        return True
+    except ValueError:
+        return False
+
+
 def _base_for_pattern(pattern: str, matches: list[Path]) -> Path:
     path = Path(pattern)
     if path.is_dir():
         return path.resolve()
+
+    if any(ch in pattern for ch in "*?[]"):
+        matched_dirs = [
+            Path(p) for p in stdglob.glob(pattern) if Path(p).is_dir()
+        ]
+        if matched_dirs and matches:
+            for directory in matched_dirs:
+                resolved = directory.resolve()
+                if all(_is_within(match, resolved) for match in matches):
+                    return resolved
 
     wildcard_idx = next((i for i, c in enumerate(pattern) if c in "*?[]"), len(pattern))
     prefix = Path(pattern[:wildcard_idx].rstrip("/"))

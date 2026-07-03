@@ -69,7 +69,7 @@ pdf-concatenator -o submission.pdf \
   contracts/
 ```
 
-Patterns can be a directory (all PDFs beneath it) or a glob, e.g. `contracts/**/*.pdf`.
+Patterns can be a directory (all PDFs beneath it) or a glob. A glob that matches a folder — e.g. `Comp*` matching `Comptons extension/` — includes all PDFs inside it. Quote patterns that contain spaces or shell metacharacters.
 
 Customise the tinted backgrounds on contents and cover pages (hex colours, default `#f3f2a3`):
 

@@ -99,7 +99,7 @@ def _summary_progress(
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     try:
-        args = parser.parse_args(argv)
+        args = parser.parse_intermixed_args(argv)
     except SystemExit as exc:
         code = exc.code
         return int(code) if isinstance(code, int) else 1

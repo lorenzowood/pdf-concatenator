@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from pdf_concatenator.discovery import discover_pdfs
+from tests.helpers import make_pdf
 
 
 class TestDiscoverPdfs:
@@ -69,6 +70,24 @@ class TestDiscoverPdfs:
         )
         rel = {r.relative_path for r in results}
         assert rel == {"reports/2024/feb.pdf", "reports/2024/jan.pdf"}
+
+    def test_glob_matching_directory_finds_nested_pdfs(self, tmp_path: Path):
+        root = tmp_path / "Comptons extension"
+        root.mkdir()
+        make_pdf(root / "a.pdf", "A")
+        make_pdf(root / "b.pdf", "B")
+
+        results = discover_pdfs(str(tmp_path / "Comp*"))
+        assert {r.relative_path for r in results} == {"a.pdf", "b.pdf"}
+
+    def test_glob_matching_directory_with_space_in_name(self, tmp_path: Path):
+        root = tmp_path / "Comptons extension"
+        nested = root / "drawings"
+        nested.mkdir(parents=True)
+        make_pdf(nested / "plan.pdf", "Plan")
+
+        results = discover_pdfs(str(tmp_path / "Comp*"))
+        assert {r.relative_path for r in results} == {"drawings/plan.pdf"}
 
     def test_paths_are_absolute(self, sample_tree: Path):
         results = discover_pdfs(str(sample_tree))
