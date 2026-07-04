@@ -14,6 +14,15 @@ from pdf_concatenator.config import (
 
 
 class TestLoadConfig:
+    def test_loads_optional_settings_without_llm_keys(self, tmp_path: Path):
+        from pdf_concatenator.config import load_optional_settings
+
+        config_file = tmp_path / "config"
+        config_file.write_text("PAGE_SIZES=a4,a3\nINDEX_PAGE_SIZE=a4\n")
+        settings = load_optional_settings(config_file)
+        assert settings["PAGE_SIZES"] == "a4,a3"
+        assert settings["INDEX_PAGE_SIZE"] == "a4"
+
     def test_loads_key_value_pairs(self, tmp_path: Path):
         config_file = tmp_path / "config"
         config_file.write_text(

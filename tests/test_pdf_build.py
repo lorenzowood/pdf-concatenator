@@ -177,6 +177,7 @@ class TestBuildConcatenatedPdf:
 
     def test_toc_row_backgrounds_tile_without_gaps(self, mocker):
         from pdf_concatenator.pdf_build import (
+            DEFAULT_PAGE_LAYOUT,
             MARGIN,
             PAGE_HEIGHT,
             _render_toc_pages,
@@ -184,7 +185,9 @@ class TestBuildConcatenatedPdf:
         )
 
         rows = [(0, f"f{i}.pdf", True, str(i + 2), None) for i in range(4)]
-        block_height = _row_block_height(0, "f0.pdf", True, "2", None, False)
+        block_height = _row_block_height(
+            DEFAULT_PAGE_LAYOUT, 0, "f0.pdf", True, "2", None, False
+        )
         rect_calls: list[tuple[float, float, float, float]] = []
         original_canvas = __import__(
             "reportlab.pdfgen.canvas", fromlist=["Canvas"]
@@ -320,6 +323,7 @@ class TestBuildConcatenatedPdf:
 
     def test_toc_wraps_long_filename_before_part_column(self, tmp_path: Path):
         from pdf_concatenator.pdf_build import (
+            DEFAULT_PAGE_LAYOUT,
             LABEL_FONT,
             LABEL_FONT_SIZE,
             RIGHT_COLUMN_RESERVE,
@@ -336,7 +340,7 @@ class TestBuildConcatenatedPdf:
             "May 22, 2020 at 14_08_03.pdf"
         )
         rows = [(0, long_name, True, "Part 2", "A short summary.")]
-        lines = _label_lines(0, long_name, True, "Part 2")
+        lines = _label_lines(DEFAULT_PAGE_LAYOUT, 0, long_name, True, "Part 2")
         assert len(lines) > 1
 
         max_line_width = PAGE_WIDTH - MARGIN - RIGHT_COLUMN_RESERVE - MARGIN

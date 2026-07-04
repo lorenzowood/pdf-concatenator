@@ -28,6 +28,12 @@ class LlmConfig:
     prompt: str
 
 
+def load_optional_settings(path: Path = DEFAULT_CONFIG_PATH) -> dict[str, str]:
+    if not path.exists():
+        return {}
+    return _parse_config_text(path.read_text())
+
+
 def _parse_config_text(text: str) -> dict[str, str]:
     values: dict[str, str] = {}
     for line in text.splitlines():

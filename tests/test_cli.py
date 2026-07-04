@@ -41,6 +41,39 @@ class TestConcatenateCli:
         )
         assert args.verbose is True
 
+    def test_page_size_flags_are_accepted(self, doc_tree: Path, tmp_path: Path):
+        from pdf_concatenator.cli import build_parser
+
+        args = build_parser().parse_args(
+            [
+                "-o",
+                str(tmp_path / "out.pdf"),
+                "--page-sizes",
+                "a4,a3",
+                "--index-page-size",
+                "a4",
+                "--separator-page-size",
+                "a3",
+                str(doc_tree),
+            ]
+        )
+        assert args.page_sizes == "a4,a3"
+        assert args.index_page_size == "a4"
+        assert args.separator_page_size == "a3"
+
+    def test_invalid_page_size_fails(self, doc_tree: Path, tmp_path: Path):
+        code = main(
+            [
+                "-o",
+                str(tmp_path / "out.pdf"),
+                "--page-sizes",
+                "b2",
+                str(doc_tree),
+            ]
+        )
+        assert code == 1
+        assert not (tmp_path / "out.pdf").exists()
+
     def test_background_color_flags_are_accepted(self, doc_tree: Path, tmp_path: Path):
         from pdf_concatenator.cli import build_parser
 

@@ -6,6 +6,7 @@ from pathlib import Path
 from pdf_concatenator.color_parse import DEFAULT_BACKGROUND_RGB
 from pdf_concatenator.pdf_build import (
     DocumentInfo,
+    PageSizeOptions,
     PdfBuildError,
     SplitContext,
     _build_pdf_bytes,
@@ -70,6 +71,7 @@ def _build_part_bytes(
     *,
     contents_background: tuple[float, float, float] = DEFAULT_BACKGROUND_RGB,
     cover_background: tuple[float, float, float] = DEFAULT_BACKGROUND_RGB,
+    page_size_options: PageSizeOptions | None = None,
 ) -> bytes:
     total_parts = len(groups)
     part_docs = groups[part_number - 1]
@@ -87,6 +89,7 @@ def _build_part_bytes(
         split=split,
         contents_background=contents_background,
         cover_background=cover_background,
+        page_size_options=page_size_options,
     )
 
 
@@ -98,6 +101,7 @@ def _build_and_rebalance(
     *,
     contents_background: tuple[float, float, float] = DEFAULT_BACKGROUND_RGB,
     cover_background: tuple[float, float, float] = DEFAULT_BACKGROUND_RGB,
+    page_size_options: PageSizeOptions | None = None,
 ) -> list[bytes]:
     built: list[bytes | None] = [None] * len(groups)
     index = 0
@@ -115,6 +119,7 @@ def _build_and_rebalance(
                 part_number=index + 1,
                 contents_background=contents_background,
                 cover_background=cover_background,
+                page_size_options=page_size_options,
             )
             if len(data) <= max_bytes:
                 built[index] = data
@@ -149,6 +154,7 @@ def build_split_outputs(
     *,
     contents_background: tuple[float, float, float] = DEFAULT_BACKGROUND_RGB,
     cover_background: tuple[float, float, float] = DEFAULT_BACKGROUND_RGB,
+    page_size_options: PageSizeOptions | None = None,
 ) -> list[Path]:
     _log("Planning parts by size...")
     groups = _greedy_plan(all_documents, include_summaries, max_bytes)
@@ -166,6 +172,7 @@ def build_split_outputs(
         max_bytes,
         contents_background=contents_background,
         cover_background=cover_background,
+        page_size_options=page_size_options,
     )
     paths = part_output_paths(output_path, total_parts)
 

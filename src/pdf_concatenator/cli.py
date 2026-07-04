@@ -10,6 +10,7 @@ from pdf_concatenator.config import ConfigError, DEFAULT_CONFIG_PATH
 from pdf_concatenator.discovery import DiscoveredPdf, discover_pdfs
 from pdf_concatenator.llm import LlmError
 from pdf_concatenator.pdf_build import DocumentInfo, PdfBuildError, build_concatenated_pdf
+from pdf_concatenator.page_size_options import resolve_page_size_options
 from pdf_concatenator.split import build_split_outputs, parse_max_output_size
 from pdf_concatenator.summaries import load_llm_config, resolve_sidecar
 from tqdm import tqdm
@@ -69,6 +70,24 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_BACKGROUND,
         metavar="color",
         help="Background color for cover pages (default: #f3f2a3)",
+    )
+    parser.add_argument(
+        "--page-sizes",
+        metavar="SIZES",
+        help=(
+            "Comma-separated paper sizes available on the printer (e.g. a4,a3); "
+            "snaps every page to the closest match"
+        ),
+    )
+    parser.add_argument(
+        "--index-page-size",
+        metavar="SIZE",
+        help="Page size for contents/index pages (default: a4, or follows first document with --page-sizes)",
+    )
+    parser.add_argument(
+        "--separator-page-size",
+        metavar="SIZE",
+        help="Page size for separator/cover pages (default: a4, or follows each document with --page-sizes)",
     )
     parser.add_argument("pattern", help="Directory or glob pattern for PDF files")
     return parser
@@ -175,6 +194,16 @@ def _concatenate(args: argparse.Namespace) -> int:
         return 1
     contents_background, cover_background = backgrounds
 
+    page_size_options, page_size_error = resolve_page_size_options(
+        config_path=Path(args.config),
+        page_sizes=args.page_sizes,
+        index_page_size=args.index_page_size,
+        separator_page_size=args.separator_page_size,
+    )
+    if page_size_error is not None:
+        print(page_size_error, file=sys.stderr)
+        return 1
+
     output_path = Path(args.output)
     config = None
     if args.include_summaries:
@@ -218,6 +247,7 @@ def _concatenate(args: argparse.Namespace) -> int:
                 max_bytes=max_bytes,
                 contents_background=contents_background,
                 cover_background=cover_background,
+                page_size_options=page_size_options,
             )
             if len(paths) > 1:
                 for path in paths:
@@ -230,6 +260,7 @@ def _concatenate(args: argparse.Namespace) -> int:
                 include_summaries=args.include_summaries,
                 contents_background=contents_background,
                 cover_background=cover_background,
+                page_size_options=page_size_options,
             )
     except PdfBuildError as exc:
         print(str(exc), file=sys.stderr)
