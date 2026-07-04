@@ -313,8 +313,8 @@ class TestRegenerateSummariesCli:
         )
         assert code == 2
 
-    def test_llm_failure_returns_error(
-        self, doc_tree: Path, llm_config: Path, mocker
+    def test_llm_failure_is_reported_and_skipped_during_regenerate(
+        self, doc_tree: Path, llm_config: Path, mocker, capsys
     ):
         from pdf_concatenator.llm import LlmError
 
@@ -332,7 +332,45 @@ class TestRegenerateSummariesCli:
                 str(doc_tree),
             ]
         )
-        assert code == 1
+        assert code == 0
+        assert not is_sidecar_valid(doc_tree / "a.pdf")
+        err = capsys.readouterr().err
+        assert "warning: skipping summary for a.pdf" in err
+        assert "LLM request failed" in err
+
+    def test_include_summaries_continues_when_one_llm_call_fails(
+        self, doc_tree: Path, tmp_path: Path, llm_config: Path, mocker, capsys
+    ):
+        from pdf_concatenator.llm import LlmError, TitleAndSummary
+
+        def generate(_config, pdf_path):
+            if pdf_path.name == "b.pdf":
+                raise LlmError("Unexpected LLM response structure")
+            return TitleAndSummary(title="Doc A", summary="Summary for A.")
+
+        mocker.patch(
+            "pdf_concatenator.summaries.generate_title_and_summary",
+            side_effect=generate,
+        )
+        output = tmp_path / "combined.pdf"
+        code = main(
+            [
+                "-o",
+                str(output),
+                "--include-summaries",
+                "--config",
+                str(llm_config),
+                str(doc_tree),
+            ]
+        )
+        assert code == 0
+        assert output.exists()
+        text = PdfReader(str(output)).pages[0].extract_text() or ""
+        assert "Summary for A." in text
+        assert "b.pdf" in text
+        err = capsys.readouterr().err
+        assert "warning: skipping summary for b.pdf" in err
+        assert "Unexpected LLM response structure" in err
 
     def test_progress_bar_when_regenerating_summaries(
         self, doc_tree: Path, llm_config: Path, mocker

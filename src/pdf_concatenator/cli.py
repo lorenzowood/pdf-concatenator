@@ -152,6 +152,13 @@ def _discover(args: argparse.Namespace):
     return pdfs
 
 
+def _report_summary_failure(pdf: DiscoveredPdf, exc: LlmError) -> None:
+    print(
+        f"warning: skipping summary for {pdf.relative_path}: {exc}",
+        file=sys.stderr,
+    )
+
+
 def _regenerate_summaries(args: argparse.Namespace) -> int:
     pdfs = _discover(args)
     if pdfs is None:
@@ -167,8 +174,7 @@ def _regenerate_summaries(args: argparse.Namespace) -> int:
         try:
             resolve_sidecar(pdf.path, config, force=True)
         except LlmError as exc:
-            print(str(exc), file=sys.stderr)
-            return 1
+            _report_summary_failure(pdf, exc)
 
     return 0
 
@@ -223,10 +229,10 @@ def _concatenate(args: argparse.Namespace) -> int:
             try:
                 sidecar = resolve_sidecar(pdf.path, config, force=False)
             except LlmError as exc:
-                print(str(exc), file=sys.stderr)
-                return 1
-            summary = sidecar.summary
-            title = sidecar.title
+                _report_summary_failure(pdf, exc)
+            else:
+                summary = sidecar.summary
+                title = sidecar.title
 
         documents.append(
             DocumentInfo(

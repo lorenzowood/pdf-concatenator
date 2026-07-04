@@ -25,6 +25,11 @@ class PageSize:
             return self
         return PageSize(self.height, self.width, self.name)
 
+    def as_portrait(self) -> PageSize:
+        if self.height >= self.width:
+            return self
+        return PageSize(self.height, self.width, self.name)
+
 
 _NAMED_SIZES: dict[str, PageSize] = {
     "a4": PageSize(A4[0], A4[1], "a4"),

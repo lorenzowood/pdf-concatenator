@@ -71,6 +71,12 @@ class TestClosestPageSize:
         result = closest_page_size(width, height, (parse_page_size("a4"),))
         assert result.width > result.height
 
+    def test_as_portrait_swaps_landscape_dimensions(self):
+        landscape = PageSize(842, 595, "a4")
+        portrait = landscape.as_portrait()
+        assert portrait.width == pytest.approx(595)
+        assert portrait.height == pytest.approx(842)
+
 
 class TestSnapPageToSize:
     def test_snapped_page_has_target_dimensions(self, tmp_path: Path):
@@ -189,3 +195,31 @@ class TestBuildWithPageSizes:
         assert float(reader.pages[2].mediabox.width) == pytest.approx(a3.width, rel=1e-3)
         assert float(reader.pages[3].mediabox.width) == pytest.approx(A4[0], rel=1e-3)
         assert float(reader.pages[4].mediabox.width) == pytest.approx(A4[0], rel=1e-3)
+
+    def test_index_page_is_portrait_when_first_document_is_landscape(
+        self, tmp_path: Path
+    ):
+        root = tmp_path / "docs"
+        landscape_pdf = _make_sized_pdf(
+            root / "landscape.pdf", (letter[1], letter[0]), "Landscape doc"
+        )
+        output = tmp_path / "out.pdf"
+        build_concatenated_pdf(
+            [
+                DocumentInfo(
+                    path=landscape_pdf,
+                    relative_path="landscape.pdf",
+                    title="Landscape",
+                    summary=None,
+                )
+            ],
+            output,
+            include_summaries=False,
+            page_size_options=PageSizeOptions(allowed_sizes=(parse_page_size("a4"),)),
+        )
+        reader = PdfReader(str(output))
+        index = reader.pages[0]
+        separator = reader.pages[1]
+        assert float(index.mediabox.width) < float(index.mediabox.height)
+        assert float(index.mediabox.width) == pytest.approx(A4[0], rel=1e-3)
+        assert float(separator.mediabox.width) > float(separator.mediabox.height)

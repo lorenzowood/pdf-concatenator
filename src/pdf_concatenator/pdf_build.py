@@ -115,9 +115,9 @@ def _resolve_index_page_size(
     first_document_size: PageSize | None,
 ) -> PageSize:
     if page_size_options.index_page_size is not None:
-        return page_size_options.index_page_size
+        return page_size_options.index_page_size.as_portrait()
     if page_size_options.snapping_enabled and first_document_size is not None:
-        return first_document_size
+        return first_document_size.as_portrait()
     return DEFAULT_INDEX_PAGE_SIZE
 
 
