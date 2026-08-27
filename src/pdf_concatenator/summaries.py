@@ -14,13 +14,19 @@ from pdf_concatenator.sidecar import (
 )
 
 
-def resolve_sidecar(pdf_path: Path, config: LlmConfig, *, force: bool = False) -> Sidecar:
-    if not force and is_sidecar_valid(pdf_path):
+def resolve_sidecar(
+    pdf_path: Path,
+    config: LlmConfig,
+    *,
+    force: bool = False,
+    extra_instructions: str = "",
+) -> Sidecar:
+    if not force and is_sidecar_valid(pdf_path, extra_instructions):
         loaded = load_sidecar(pdf_path)
         if loaded is not None:
             return loaded
 
-    generated = generate_title_and_summary(config, pdf_path)
+    generated = generate_title_and_summary(config, pdf_path, extra_instructions)
     sidecar = Sidecar(
         filename=pdf_path.name,
         sha256=sha256_file(pdf_path),
@@ -28,6 +34,7 @@ def resolve_sidecar(pdf_path: Path, config: LlmConfig, *, force: bool = False) -
         summary=generated.summary,
         generated_by=config.model,
         generated_on=datetime.now(timezone.utc).isoformat(),
+        instructions=extra_instructions,
     )
     save_sidecar(pdf_path, sidecar)
     return sidecar

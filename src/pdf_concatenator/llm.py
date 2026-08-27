@@ -55,7 +55,9 @@ def _parse_llm_content(content: str) -> TitleAndSummary:
     return TitleAndSummary(title=str(title).strip(), summary=str(summary).strip())
 
 
-def _build_messages(config: LlmConfig, pdf_path: Path) -> list[dict]:
+def _build_messages(
+    config: LlmConfig, pdf_path: Path, extra_instructions: str = ""
+) -> list[dict]:
     metadata = _extract_metadata(pdf_path)
     pdf_bytes = pdf_path.read_bytes()
     b64 = base64.standard_b64encode(pdf_bytes).decode("ascii")
@@ -64,8 +66,11 @@ def _build_messages(config: LlmConfig, pdf_path: Path) -> list[dict]:
         f"Filename: {pdf_path.name}\n"
         f"Metadata:\n{metadata_lines or '(none)'}"
     )
+    system_content = config.prompt
+    if extra_instructions.strip():
+        system_content = f"{system_content}\n\n{extra_instructions.strip()}"
     return [
-        {"role": "system", "content": config.prompt},
+        {"role": "system", "content": system_content},
         {
             "role": "user",
             "content": [
@@ -82,14 +87,16 @@ def _build_messages(config: LlmConfig, pdf_path: Path) -> list[dict]:
     ]
 
 
-def generate_title_and_summary(config: LlmConfig, pdf_path: Path) -> TitleAndSummary:
+def generate_title_and_summary(
+    config: LlmConfig, pdf_path: Path, extra_instructions: str = ""
+) -> TitleAndSummary:
     if config.api != "open_ai":
         raise LlmError(f"Unsupported LLM_API value: {config.api}")
 
     url = f"http://{config.server}/v1/chat/completions"
     payload = {
         "model": config.model,
-        "messages": _build_messages(config, pdf_path),
+        "messages": _build_messages(config, pdf_path, extra_instructions),
     }
     headers = {"Authorization": f"Bearer {config.api_key}"}
 

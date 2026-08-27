@@ -50,6 +50,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Path to LLM config file",
     )
     parser.add_argument(
+        "--summary-instructions",
+        metavar="TEXT",
+        help=(
+            "Extra instructions appended to the summarisation prompt for this run "
+            "(e.g. how to derive the summary). Changing the text invalidates cached "
+            "sidecars."
+        ),
+    )
+    parser.add_argument(
+        "--summary-instructions-file",
+        metavar="PATH",
+        help="Read the extra summarisation instructions from a file instead of --summary-instructions",
+    )
+    parser.add_argument(
         "--page-numbers",
         action="store_true",
         help="Superimpose running page numbers on the original PDF pages",
@@ -156,6 +170,24 @@ def main(argv: list[str] | None = None) -> int:
     return _concatenate(args)
 
 
+def _resolve_summary_instructions(args: argparse.Namespace) -> str | None:
+    """Return the extra prompt text, or None if the arguments are inconsistent."""
+    text = args.summary_instructions
+    if args.summary_instructions_file:
+        if text is not None:
+            print(
+                "error: use only one of --summary-instructions / --summary-instructions-file",
+                file=sys.stderr,
+            )
+            return None
+        try:
+            text = Path(args.summary_instructions_file).read_text()
+        except OSError as exc:
+            print(f"error: cannot read --summary-instructions-file: {exc}", file=sys.stderr)
+            return None
+    return (text or "").strip()
+
+
 def _discover(args: argparse.Namespace):
     pdfs = discover_pdfs(args.pattern, excludes=args.exclude)
     if not pdfs:
@@ -182,9 +214,15 @@ def _regenerate_summaries(args: argparse.Namespace) -> int:
         print(str(exc), file=sys.stderr)
         return 1
 
+    instructions = _resolve_summary_instructions(args)
+    if instructions is None:
+        return 2
+
     for pdf in _summary_progress(pdfs):
         try:
-            resolve_sidecar(pdf.path, config, force=True)
+            resolve_sidecar(
+                pdf.path, config, force=True, extra_instructions=instructions
+            )
         except LlmError as exc:
             _report_summary_failure(pdf, exc)
 
@@ -224,12 +262,17 @@ def _concatenate(args: argparse.Namespace) -> int:
 
     output_path = Path(args.output)
     config = None
+    summary_instructions = ""
     if args.include_summaries:
         try:
             config = load_llm_config(Path(args.config))
         except ConfigError as exc:
             print(str(exc), file=sys.stderr)
             return 1
+        resolved = _resolve_summary_instructions(args)
+        if resolved is None:
+            return 2
+        summary_instructions = resolved
 
     documents: list[DocumentInfo] = []
     summary_pdfs = pdfs if args.include_summaries else []
@@ -239,7 +282,12 @@ def _concatenate(args: argparse.Namespace) -> int:
         if args.include_summaries:
             assert config is not None
             try:
-                sidecar = resolve_sidecar(pdf.path, config, force=False)
+                sidecar = resolve_sidecar(
+                    pdf.path,
+                    config,
+                    force=False,
+                    extra_instructions=summary_instructions,
+                )
             except LlmError as exc:
                 _report_summary_failure(pdf, exc)
             else:

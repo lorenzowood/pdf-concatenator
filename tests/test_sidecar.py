@@ -87,6 +87,43 @@ class TestSidecarValidation:
         pdf.write_bytes(b"x")
         assert is_sidecar_valid(pdf) is False
 
+    def test_invalid_when_instructions_differ(self, tmp_path: Path):
+        pdf = tmp_path / "doc.pdf"
+        pdf.write_bytes(b"content")
+        sidecar = Sidecar(
+            filename="doc.pdf",
+            sha256=sha256_file(pdf),
+            title="T",
+            summary="S",
+            generated_by="m",
+            generated_on="2026-01-01T00:00:00+00:00",
+            instructions="use the yaml field",
+        )
+        save_sidecar(pdf, sidecar)
+        assert is_sidecar_valid(pdf, "use the yaml field") is True
+        assert is_sidecar_valid(pdf, "something else") is False
+        assert is_sidecar_valid(pdf) is False
+
+    def test_legacy_sidecar_without_instructions_key_loads(self, tmp_path: Path):
+        pdf = tmp_path / "doc.pdf"
+        pdf.write_bytes(b"content")
+        sidecar_path_for(pdf).write_text(
+            json.dumps(
+                {
+                    "filename": "doc.pdf",
+                    "sha256": sha256_file(pdf),
+                    "title": "T",
+                    "summary": "S",
+                    "generated-by": "m",
+                    "generated-on": "2026-01-01T00:00:00+00:00",
+                }
+            )
+        )
+        loaded = load_sidecar(pdf)
+        assert loaded is not None
+        assert loaded.instructions == ""
+        assert is_sidecar_valid(pdf) is True
+
 
 class TestSidecarSchema:
     def test_rejects_unknown_fields_on_load(self, tmp_path: Path):

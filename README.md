@@ -114,6 +114,22 @@ The server should expose an OpenAI-compatible `/v1/chat/completions` endpoint. T
 
 Summaries are stored beside each PDF as `document.pdf.sidecar.json` and reused when the file hash matches.
 
+### Per-run summary instructions
+
+`--summary-instructions "TEXT"` appends extra guidance to the prompt for one run,
+without editing the config file. `--summary-instructions-file PATH` reads the same
+text from a file. The instructions are recorded in each sidecar, so changing them
+invalidates the cache and the affected summaries are regenerated on the next run.
+
+For example, when every PDF carries a usable summary in its own front matter:
+
+```bash
+pdf-concatenator -o combined.pdf --no-interstitial-pages --include-summaries \
+  --summary-instructions "These PDFs all have YAML front matter. Take the summary \
+from the front-matter 'summary:' field verbatim; do not write a new one from the body." \
+  posts/
+```
+
 ## Output structure
 
 1. **Contents** — tree of folders and files; page numbers point to each document's cover page. Alternating rows are shaded. When summaries are included, a disclaimer appears in the footer.
@@ -141,7 +157,8 @@ If everything fits in one file, the original output name is used with no `_part_
 ```
 usage: pdf-concatenator [-h] [-o filename] [--include-summaries]
                         [--regenerate-summaries] [--exclude pattern]
-                        [--config CONFIG] [--page-numbers]
+                        [--config CONFIG] [--summary-instructions TEXT]
+                        [--summary-instructions-file PATH] [--page-numbers]
                         [--no-interstitial-pages] [--verbose]
                         [--max-output-size SIZE]
                         [--contents-background color]
@@ -158,6 +175,8 @@ usage: pdf-concatenator [-h] [-o filename] [--include-summaries]
 | `--no-interstitial-pages` | Omit the per-document cover pages (alias `--no-cover-pages`) |
 | `--exclude` | Glob pattern to exclude (repeatable) |
 | `--config` | Path to LLM config (default: `~/.config/pdf-concatenator`) |
+| `--summary-instructions` | Extra text appended to the summarisation prompt for this run |
+| `--summary-instructions-file` | Read the extra summarisation instructions from a file |
 | `--verbose` | Show library warnings while reading/merging PDFs |
 | `--max-output-size` | Split output into parts under this size (e.g. `50M`, `2G`) |
 | `--contents-background` | Background colour for contents pages (default: `#f3f2a3`) |

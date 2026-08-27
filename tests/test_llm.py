@@ -94,6 +94,37 @@ class TestGenerateTitleAndSummary:
         ]
         assert any("Meta Title" in t for t in text_parts)
 
+    def test_extra_instructions_appended_to_system_prompt(self, tmp_path: Path, mocker):
+        pdf = _minimal_pdf(tmp_path / "doc.pdf")
+        mock_response = mocker.Mock()
+        mock_response.raise_for_status = mocker.Mock()
+        mock_response.json.return_value = {
+            "choices": [{"message": {"content": '{"title": "T", "summary": "S"}'}}]
+        }
+        mock_post = mocker.patch(
+            "pdf_concatenator.llm.httpx.post", return_value=mock_response
+        )
+        generate_title_and_summary(
+            _make_config(), pdf, "Use the YAML summary field verbatim."
+        )
+        system_content = mock_post.call_args[1]["json"]["messages"][0]["content"]
+        assert system_content.startswith("Summarise this PDF.")
+        assert "Use the YAML summary field verbatim." in system_content
+
+    def test_no_extra_instructions_leaves_prompt_unchanged(self, tmp_path: Path, mocker):
+        pdf = _minimal_pdf(tmp_path / "doc.pdf")
+        mock_response = mocker.Mock()
+        mock_response.raise_for_status = mocker.Mock()
+        mock_response.json.return_value = {
+            "choices": [{"message": {"content": '{"title": "T", "summary": "S"}'}}]
+        }
+        mock_post = mocker.patch(
+            "pdf_concatenator.llm.httpx.post", return_value=mock_response
+        )
+        generate_title_and_summary(_make_config(), pdf)
+        system_content = mock_post.call_args[1]["json"]["messages"][0]["content"]
+        assert system_content == "Summarise this PDF."
+
     def test_raises_on_http_error(self, tmp_path: Path, mocker):
         pdf = _minimal_pdf(tmp_path / "doc.pdf")
         mock_response = mocker.Mock()

@@ -14,6 +14,7 @@ class Sidecar:
     summary: str
     generated_by: str
     generated_on: str
+    instructions: str = ""
 
 
 def sidecar_path_for(pdf_path: Path) -> Path:
@@ -34,6 +35,7 @@ def _to_json_dict(sidecar: Sidecar) -> dict[str, str]:
         "summary": sidecar.summary,
         "generated-by": sidecar.generated_by,
         "generated-on": sidecar.generated_on,
+        "instructions": sidecar.instructions,
     }
 
 
@@ -45,6 +47,7 @@ def _from_json_dict(data: dict) -> Sidecar:
         summary=data["summary"],
         generated_by=data["generated-by"],
         generated_on=data["generated-on"],
+        instructions=data.get("instructions", ""),
     )
 
 
@@ -62,8 +65,10 @@ def load_sidecar(pdf_path: Path) -> Sidecar | None:
     return _from_json_dict(data)
 
 
-def is_sidecar_valid(pdf_path: Path) -> bool:
+def is_sidecar_valid(pdf_path: Path, expected_instructions: str = "") -> bool:
     sidecar = load_sidecar(pdf_path)
     if sidecar is None:
+        return False
+    if sidecar.instructions != expected_instructions:
         return False
     return sidecar.sha256 == sha256_file(pdf_path)

@@ -343,7 +343,7 @@ class TestRegenerateSummariesCli:
     ):
         from pdf_concatenator.llm import LlmError, TitleAndSummary
 
-        def generate(_config, pdf_path):
+        def generate(_config, pdf_path, _extra_instructions=""):
             if pdf_path.name == "b.pdf":
                 raise LlmError("Unexpected LLM response structure")
             return TitleAndSummary(title="Doc A", summary="Summary for A.")
