@@ -4,7 +4,7 @@ import io
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from pypdf import PageObject, PdfReader, PdfWriter
+from pypdf import PageObject, PdfReader, PdfWriter, Transformation
 from pdf_concatenator.color_parse import DEFAULT_BACKGROUND_RGB, tint_with_black
 from pdf_concatenator.page_size import (
     DEFAULT_INDEX_PAGE_SIZE,
@@ -75,6 +75,9 @@ SUMMARY_FONT = "Helvetica"
 SUMMARY_FONT_SIZE = 9
 ROW_STRIPE_BLACK_OPACITY = 0.05
 SUMMARY_DISCLAIMER = "Summaries are generated automatically and may contain errors."
+PAGE_NUMBER_FONT = "Helvetica"
+PAGE_NUMBER_FONT_SIZE = 10
+PAGE_NUMBER_MARGIN = 24
 
 
 @dataclass(frozen=True)
@@ -500,13 +503,40 @@ def _render_cover_page(
 def _assign_cover_pages(
     documents: list[DocumentInfo],
     toc_page_count: int,
+    *,
+    include_covers: bool = True,
 ) -> dict[str, int]:
+    """Map each document to the page the table of contents should point at.
+
+    With cover pages that is the cover page itself; without them it is the
+    document's first original page.
+    """
     page = toc_page_count + 1
     cover_pages: dict[str, int] = {}
     for doc in sorted(documents, key=lambda d: d.relative_path):
         cover_pages[doc.relative_path] = page
-        page += 1 + _source_page_count(doc.path)
+        page += (1 if include_covers else 0) + _source_page_count(doc.path)
     return cover_pages
+
+
+def _stamp_page_number(page: PageObject, number: int) -> None:
+    """Superimpose ``number`` near the bottom-centre of ``page`` in place."""
+    box = page.mediabox
+    left, bottom = float(box.left), float(box.bottom)
+    width, height = float(box.width), float(box.height)
+
+    buffer = io.BytesIO()
+    c = canvas.Canvas(buffer, pagesize=(width, height))
+    c.setFont(PAGE_NUMBER_FONT, PAGE_NUMBER_FONT_SIZE)
+    c.setFillColor(colors.black)
+    c.drawCentredString(width / 2, PAGE_NUMBER_MARGIN, str(number))
+    c.save()
+    buffer.seek(0)
+
+    overlay = PdfReader(buffer).pages[0]
+    if left or bottom:
+        overlay.add_transformation(Transformation().translate(left, bottom))
+    page.merge_page(overlay)
 
 
 def _find_file_node(root: _TocNode, relative_path: str) -> _TocNode:
@@ -536,6 +566,8 @@ def _build_pdf_bytes(
     contents_background: tuple[float, float, float] = DEFAULT_BACKGROUND_RGB,
     cover_background: tuple[float, float, float] = DEFAULT_BACKGROUND_RGB,
     page_size_options: PageSizeOptions | None = None,
+    include_covers: bool = True,
+    stamp_page_numbers: bool = False,
 ) -> bytes:
     if not part_documents:
         raise PdfBuildError("No documents to concatenate")
@@ -552,7 +584,9 @@ def _build_pdf_bytes(
     toc_reader: PdfReader | None = None
 
     for _ in range(10):
-        cover_pages = _assign_cover_pages(part_documents, toc_page_count)
+        cover_pages = _assign_cover_pages(
+            part_documents, toc_page_count, include_covers=include_covers
+        )
         for doc in toc_documents:
             node = _find_file_node(root, doc.relative_path)
             node.page = None
@@ -579,7 +613,9 @@ def _build_pdf_bytes(
         raise PdfBuildError("Could not stabilise table of contents page count")
 
     assert toc_reader is not None
-    cover_pages = _assign_cover_pages(part_documents, len(toc_reader.pages))
+    cover_pages = _assign_cover_pages(
+        part_documents, len(toc_reader.pages), include_covers=include_covers
+    )
     for doc in toc_documents:
         node = _find_file_node(root, doc.relative_path)
         node.page = None
@@ -605,23 +641,27 @@ def _build_pdf_bytes(
 
     for doc in sorted(part_documents, key=lambda d: d.relative_path):
         cover_num = cover_pages[doc.relative_path]
-        separator_size = _resolve_separator_page_size(
-            options,
-            document_sizes.get(doc.relative_path),
-        )
-        cover_layout = _layout_for_page_size(separator_size)
-        cover_reader = _render_cover_page(
-            doc.relative_path,
-            doc.summary,
-            cover_num,
-            include_summaries,
-            layout=cover_layout,
-            cover_background=cover_background,
-        )
-        writer.add_page(cover_reader.pages[0])
+        if include_covers:
+            separator_size = _resolve_separator_page_size(
+                options,
+                document_sizes.get(doc.relative_path),
+            )
+            cover_layout = _layout_for_page_size(separator_size)
+            cover_reader = _render_cover_page(
+                doc.relative_path,
+                doc.summary,
+                cover_num,
+                include_summaries,
+                layout=cover_layout,
+                cover_background=cover_background,
+            )
+            writer.add_page(cover_reader.pages[0])
         source = PdfReader(str(doc.path))
         for page in source.pages:
-            writer.add_page(_snap_page_if_needed(page, options))
+            snapped = _snap_page_if_needed(page, options)
+            added = writer.add_page(snapped)
+            if stamp_page_numbers:
+                _stamp_page_number(added, len(writer.pages))
 
     buffer = io.BytesIO()
     writer.write(buffer)
@@ -638,6 +678,8 @@ def build_concatenated_pdf(
     contents_background: tuple[float, float, float] = DEFAULT_BACKGROUND_RGB,
     cover_background: tuple[float, float, float] = DEFAULT_BACKGROUND_RGB,
     page_size_options: PageSizeOptions | None = None,
+    include_covers: bool = True,
+    stamp_page_numbers: bool = False,
 ) -> None:
     data = _build_pdf_bytes(
         documents,
@@ -647,6 +689,8 @@ def build_concatenated_pdf(
         contents_background=contents_background,
         cover_background=cover_background,
         page_size_options=page_size_options,
+        include_covers=include_covers,
+        stamp_page_numbers=stamp_page_numbers,
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_bytes(data)

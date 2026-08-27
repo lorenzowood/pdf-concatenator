@@ -72,6 +72,8 @@ def _build_part_bytes(
     contents_background: tuple[float, float, float] = DEFAULT_BACKGROUND_RGB,
     cover_background: tuple[float, float, float] = DEFAULT_BACKGROUND_RGB,
     page_size_options: PageSizeOptions | None = None,
+    include_covers: bool = True,
+    stamp_page_numbers: bool = False,
 ) -> bytes:
     total_parts = len(groups)
     part_docs = groups[part_number - 1]
@@ -90,6 +92,8 @@ def _build_part_bytes(
         contents_background=contents_background,
         cover_background=cover_background,
         page_size_options=page_size_options,
+        include_covers=include_covers,
+        stamp_page_numbers=stamp_page_numbers,
     )
 
 
@@ -102,6 +106,8 @@ def _build_and_rebalance(
     contents_background: tuple[float, float, float] = DEFAULT_BACKGROUND_RGB,
     cover_background: tuple[float, float, float] = DEFAULT_BACKGROUND_RGB,
     page_size_options: PageSizeOptions | None = None,
+    include_covers: bool = True,
+    stamp_page_numbers: bool = False,
 ) -> list[bytes]:
     built: list[bytes | None] = [None] * len(groups)
     index = 0
@@ -120,6 +126,8 @@ def _build_and_rebalance(
                 contents_background=contents_background,
                 cover_background=cover_background,
                 page_size_options=page_size_options,
+                include_covers=include_covers,
+                stamp_page_numbers=stamp_page_numbers,
             )
             if len(data) <= max_bytes:
                 built[index] = data
@@ -155,6 +163,8 @@ def build_split_outputs(
     contents_background: tuple[float, float, float] = DEFAULT_BACKGROUND_RGB,
     cover_background: tuple[float, float, float] = DEFAULT_BACKGROUND_RGB,
     page_size_options: PageSizeOptions | None = None,
+    include_covers: bool = True,
+    stamp_page_numbers: bool = False,
 ) -> list[Path]:
     _log("Planning parts by size...")
     groups = _greedy_plan(all_documents, include_summaries, max_bytes)
@@ -173,6 +183,8 @@ def build_split_outputs(
         contents_background=contents_background,
         cover_background=cover_background,
         page_size_options=page_size_options,
+        include_covers=include_covers,
+        stamp_page_numbers=stamp_page_numbers,
     )
     paths = part_output_paths(output_path, total_parts)
 

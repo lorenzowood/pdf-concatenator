@@ -9,7 +9,8 @@ This tool was built to pull together a large set of PDFs for a **contract submis
 - Recursively discover PDFs from a directory or glob pattern
 - Sort files by path and concatenate them into one output PDF
 - Generate a **table of contents** with folder structure, page numbers, and alternating row shading
-- Insert a **cover page** before each source PDF (path, optional summary, page number)
+- Insert a **cover page** before each source PDF (path, optional summary, page number), or omit them entirely (`--no-interstitial-pages`)
+- Optionally **superimpose running page numbers** on the source pages (`--page-numbers`)
 - Tinted **background colours** on contents and cover pages so they stand out when scrolling (default: legal-pad yellow)
 - Optionally generate **LLM summaries** via a sidecar file per PDF (`*.pdf.sidecar.json`)
 - Regenerate sidecars without concatenating (`--regenerate-summaries`)
@@ -82,6 +83,21 @@ pdf-concatenator -o submission.pdf \
 
 Alternating row stripes in the contents are derived from the contents background (5% black overlay), so they stay readable on any colour.
 
+### One continuous document
+
+To bundle many PDFs into a single flowing document — no separator pages, with page
+numbers stamped on every page so the contents entries are usable:
+
+```bash
+pdf-concatenator -o combined.pdf --no-interstitial-pages --page-numbers posts/
+```
+
+`--no-interstitial-pages` (alias `--no-cover-pages`) drops the per-document cover
+pages; the table of contents then links straight to each document's first page.
+`--page-numbers` overlays a running page number, centred at the foot of each
+source page, numbered by absolute position in the output (so it matches both the
+contents and the PDF viewer). The two options are independent.
+
 ## LLM configuration
 
 When using `--include-summaries` or `--regenerate-summaries`, create `~/.config/pdf-concatenator`:
@@ -101,8 +117,8 @@ Summaries are stored beside each PDF as `document.pdf.sidecar.json` and reused w
 ## Output structure
 
 1. **Contents** — tree of folders and files; page numbers point to each document's cover page. Alternating rows are shaded. When summaries are included, a disclaimer appears in the footer.
-2. **Cover page** per PDF — relative path, optional summary, page number. Both contents and cover pages use a tinted background (legal-pad yellow by default).
-3. **Original PDF pages** — unchanged (no added page numbers).
+2. **Cover page** per PDF — relative path, optional summary, page number. Both contents and cover pages use a tinted background (legal-pad yellow by default). Suppressed by `--no-interstitial-pages`.
+3. **Original PDF pages** — unchanged, unless `--page-numbers` is given, in which case a running page number is superimposed at the foot of each page.
 
 If any PDF cannot be read, or summary generation fails when required, the run aborts and no output file is produced.
 
@@ -125,7 +141,8 @@ If everything fits in one file, the original output name is used with no `_part_
 ```
 usage: pdf-concatenator [-h] [-o filename] [--include-summaries]
                         [--regenerate-summaries] [--exclude pattern]
-                        [--config CONFIG] [--verbose]
+                        [--config CONFIG] [--page-numbers]
+                        [--no-interstitial-pages] [--verbose]
                         [--max-output-size SIZE]
                         [--contents-background color]
                         [--cover-background color]
@@ -137,6 +154,8 @@ usage: pdf-concatenator [-h] [-o filename] [--include-summaries]
 | `-o`, `--output` | Output PDF path (required unless `--regenerate-summaries`) |
 | `--include-summaries` | Include summaries in contents and cover pages |
 | `--regenerate-summaries` | Regenerate sidecar files only; do not concatenate |
+| `--page-numbers` | Superimpose running page numbers on the original PDF pages |
+| `--no-interstitial-pages` | Omit the per-document cover pages (alias `--no-cover-pages`) |
 | `--exclude` | Glob pattern to exclude (repeatable) |
 | `--config` | Path to LLM config (default: `~/.config/pdf-concatenator`) |
 | `--verbose` | Show library warnings while reading/merging PDFs |

@@ -385,3 +385,56 @@ class TestBuildConcatenatedPdf:
         second_label_y = next(y for y, text in draws if text == "second-document.pdf")
         assert first_summary_ys
         assert second_label_y < min(first_summary_ys)
+
+
+class TestInterstitialPages:
+    def test_covers_omitted_reduces_page_count(
+        self, two_doc_tree: TreeFixture, tmp_path: Path
+    ):
+        output = tmp_path / "out.pdf"
+        build_concatenated_pdf(
+            two_doc_tree.docs,
+            output,
+            include_summaries=False,
+            include_covers=False,
+        )
+        reader = PdfReader(str(output))
+        # 1 TOC + 1 source * 2 docs = 3 pages (no cover pages)
+        assert len(reader.pages) == 3
+
+    def test_contents_points_at_first_document_page_without_covers(
+        self, two_doc_tree: TreeFixture, tmp_path: Path
+    ):
+        output = tmp_path / "out.pdf"
+        build_concatenated_pdf(
+            two_doc_tree.docs,
+            output,
+            include_summaries=False,
+            include_covers=False,
+        )
+        reader = PdfReader(str(output))
+        toc_text = reader.pages[0].extract_text() or ""
+        # jan.pdf sorts first, so its first page is page 2 (right after the TOC)
+        assert "jan.pdf" in toc_text
+        assert "2" in toc_text
+        # Page 2 is the actual document, not a cover page
+        page_two = reader.pages[1].extract_text() or ""
+        assert "January" in page_two
+
+
+class TestPageNumbers:
+    def test_page_numbers_stamped_on_source_pages(
+        self, two_doc_tree: TreeFixture, tmp_path: Path
+    ):
+        output = tmp_path / "out.pdf"
+        build_concatenated_pdf(
+            two_doc_tree.docs,
+            output,
+            include_summaries=False,
+            include_covers=False,
+            stamp_page_numbers=True,
+        )
+        reader = PdfReader(str(output))
+        # Pages 2 and 3 are source pages; they should carry their absolute number
+        assert "2" in (reader.pages[1].extract_text() or "")
+        assert "3" in (reader.pages[2].extract_text() or "")

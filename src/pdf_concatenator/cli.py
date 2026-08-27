@@ -50,6 +50,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Path to LLM config file",
     )
     parser.add_argument(
+        "--page-numbers",
+        action="store_true",
+        help="Superimpose running page numbers on the original PDF pages",
+    )
+    parser.add_argument(
+        "--no-interstitial-pages",
+        "--no-cover-pages",
+        dest="interstitial_pages",
+        action="store_false",
+        help="Omit the per-document cover/separator pages (contents links point straight to each document)",
+    )
+    parser.add_argument(
         "--verbose",
         action="store_true",
         help="Show library warnings while reading and merging PDFs",
@@ -254,6 +266,8 @@ def _concatenate(args: argparse.Namespace) -> int:
                 contents_background=contents_background,
                 cover_background=cover_background,
                 page_size_options=page_size_options,
+                include_covers=args.interstitial_pages,
+                stamp_page_numbers=args.page_numbers,
             )
             if len(paths) > 1:
                 for path in paths:
@@ -267,6 +281,8 @@ def _concatenate(args: argparse.Namespace) -> int:
                 contents_background=contents_background,
                 cover_background=cover_background,
                 page_size_options=page_size_options,
+                include_covers=args.interstitial_pages,
+                stamp_page_numbers=args.page_numbers,
             )
     except PdfBuildError as exc:
         print(str(exc), file=sys.stderr)
