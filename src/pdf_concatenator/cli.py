@@ -8,6 +8,12 @@ from pathlib import Path
 from pdf_concatenator.color_parse import DEFAULT_BACKGROUND, ColorParseError, parse_color
 from pdf_concatenator.config import ConfigError, DEFAULT_CONFIG_PATH
 from pdf_concatenator.discovery import DiscoveredPdf, discover_pdfs
+from pdf_concatenator.frontmatter import (
+    FrontMatterExpressionError,
+    SummaryExpression,
+    compile_expression,
+    load_front_matter_for,
+)
 from pdf_concatenator.llm import LlmError
 from pdf_concatenator.pdf_build import DocumentInfo, PdfBuildError, build_concatenated_pdf
 from pdf_concatenator.page_size_options import resolve_page_size_options
@@ -62,6 +68,24 @@ def build_parser() -> argparse.ArgumentParser:
         "--summary-instructions-file",
         metavar="PATH",
         help="Read the extra summarisation instructions from a file instead of --summary-instructions",
+    )
+    parser.add_argument(
+        "--summaries-from-frontmatter",
+        metavar="EXPR",
+        help=(
+            "Build each summary from the companion file's YAML front matter using "
+            "an expression (no LLM). E.g. "
+            "'(original_headline ? original_headline \": \") summary \" (\" section \")\"'. "
+            "See README for the expression language."
+        ),
+    )
+    parser.add_argument(
+        "--frontmatter-dir",
+        metavar="DIR",
+        help=(
+            "Directory holding the <stem>.md/.yaml companion files for "
+            "--summaries-from-frontmatter (default: beside each PDF)"
+        ),
     )
     parser.add_argument(
         "--page-numbers",
@@ -155,6 +179,13 @@ def main(argv: list[str] | None = None) -> int:
         if args.output:
             print(
                 "error: --output cannot be used with --regenerate-summaries",
+                file=sys.stderr,
+            )
+            return 2
+        if args.summaries_from_frontmatter is not None:
+            print(
+                "error: --summaries-from-frontmatter has nothing to regenerate "
+                "(front-matter summaries are computed at build time)",
                 file=sys.stderr,
             )
             return 2
@@ -261,9 +292,24 @@ def _concatenate(args: argparse.Namespace) -> int:
         return 1
 
     output_path = Path(args.output)
+
+    frontmatter_expr: SummaryExpression | None = None
+    if args.summaries_from_frontmatter is not None:
+        try:
+            frontmatter_expr = compile_expression(args.summaries_from_frontmatter)
+        except FrontMatterExpressionError as exc:
+            print(
+                f"error: bad --summaries-from-frontmatter expression: {exc}",
+                file=sys.stderr,
+            )
+            return 2
+
+    want_summaries = args.include_summaries or frontmatter_expr is not None
+    frontmatter_dir = args.frontmatter_dir
+
     config = None
     summary_instructions = ""
-    if args.include_summaries:
+    if want_summaries and frontmatter_expr is None:
         try:
             config = load_llm_config(Path(args.config))
         except ConfigError as exc:
@@ -275,11 +321,20 @@ def _concatenate(args: argparse.Namespace) -> int:
         summary_instructions = resolved
 
     documents: list[DocumentInfo] = []
-    summary_pdfs = pdfs if args.include_summaries else []
+    summary_pdfs = pdfs if want_summaries else []
     for pdf in _summary_progress(summary_pdfs) if summary_pdfs else pdfs:
         summary: str | None = None
         title = pdf.path.stem
-        if args.include_summaries:
+        if frontmatter_expr is not None:
+            fields = load_front_matter_for(pdf.path, frontmatter_dir)
+            if fields is None:
+                print(
+                    f"warning: no front matter found for {pdf.relative_path}",
+                    file=sys.stderr,
+                )
+            else:
+                summary = frontmatter_expr.evaluate(fields) or None
+        elif args.include_summaries:
             assert config is not None
             try:
                 sidecar = resolve_sidecar(
@@ -309,13 +364,14 @@ def _concatenate(args: argparse.Namespace) -> int:
             paths = build_split_outputs(
                 documents,
                 output_path,
-                include_summaries=args.include_summaries,
+                include_summaries=want_summaries,
                 max_bytes=max_bytes,
                 contents_background=contents_background,
                 cover_background=cover_background,
                 page_size_options=page_size_options,
                 include_covers=args.interstitial_pages,
                 stamp_page_numbers=args.page_numbers,
+                summary_disclaimer=frontmatter_expr is None,
             )
             if len(paths) > 1:
                 for path in paths:
@@ -325,12 +381,13 @@ def _concatenate(args: argparse.Namespace) -> int:
             build_concatenated_pdf(
                 documents,
                 output_path,
-                include_summaries=args.include_summaries,
+                include_summaries=want_summaries,
                 contents_background=contents_background,
                 cover_background=cover_background,
                 page_size_options=page_size_options,
                 include_covers=args.interstitial_pages,
                 stamp_page_numbers=args.page_numbers,
+                summary_disclaimer=frontmatter_expr is None,
             )
     except PdfBuildError as exc:
         print(str(exc), file=sys.stderr)

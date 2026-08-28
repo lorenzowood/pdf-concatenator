@@ -74,6 +74,7 @@ def _build_part_bytes(
     page_size_options: PageSizeOptions | None = None,
     include_covers: bool = True,
     stamp_page_numbers: bool = False,
+    summary_disclaimer: bool = True,
 ) -> bytes:
     total_parts = len(groups)
     part_docs = groups[part_number - 1]
@@ -94,6 +95,7 @@ def _build_part_bytes(
         page_size_options=page_size_options,
         include_covers=include_covers,
         stamp_page_numbers=stamp_page_numbers,
+        summary_disclaimer=summary_disclaimer,
     )
 
 
@@ -108,6 +110,7 @@ def _build_and_rebalance(
     page_size_options: PageSizeOptions | None = None,
     include_covers: bool = True,
     stamp_page_numbers: bool = False,
+    summary_disclaimer: bool = True,
 ) -> list[bytes]:
     built: list[bytes | None] = [None] * len(groups)
     index = 0
@@ -128,6 +131,7 @@ def _build_and_rebalance(
                 page_size_options=page_size_options,
                 include_covers=include_covers,
                 stamp_page_numbers=stamp_page_numbers,
+                summary_disclaimer=summary_disclaimer,
             )
             if len(data) <= max_bytes:
                 built[index] = data
@@ -165,6 +169,7 @@ def build_split_outputs(
     page_size_options: PageSizeOptions | None = None,
     include_covers: bool = True,
     stamp_page_numbers: bool = False,
+    summary_disclaimer: bool = True,
 ) -> list[Path]:
     _log("Planning parts by size...")
     groups = _greedy_plan(all_documents, include_summaries, max_bytes)
@@ -185,6 +190,7 @@ def build_split_outputs(
         page_size_options=page_size_options,
         include_covers=include_covers,
         stamp_page_numbers=stamp_page_numbers,
+        summary_disclaimer=summary_disclaimer,
     )
     paths = part_output_paths(output_path, total_parts)
 

@@ -365,10 +365,11 @@ def _draw_page_footer(
     page_number: int,
     *,
     include_summaries: bool,
+    summary_disclaimer: bool = True,
 ) -> None:
     c.setFont("Helvetica", 10)
     c.setFillColor(colors.black)
-    if include_summaries:
+    if include_summaries and summary_disclaimer:
         c.drawString(layout.margin, layout.margin, SUMMARY_DISCLAIMER)
     c.drawRightString(layout.width - layout.margin, layout.margin, str(page_number))
 
@@ -380,6 +381,7 @@ def _render_toc_pages(
     layout: PageLayout = DEFAULT_PAGE_LAYOUT,
     split: SplitContext | None = None,
     contents_background: tuple[float, float, float] = DEFAULT_BACKGROUND_RGB,
+    summary_disclaimer: bool = True,
 ) -> PdfReader:
     buffer = io.BytesIO()
     page_count = 0
@@ -409,7 +411,13 @@ def _render_toc_pages(
         return y
 
     def end_page(c: canvas.Canvas) -> None:
-        _draw_page_footer(c, layout, page_count, include_summaries=include_summaries)
+        _draw_page_footer(
+            c,
+            layout,
+            page_count,
+            include_summaries=include_summaries,
+            summary_disclaimer=summary_disclaimer,
+        )
 
     c = canvas.Canvas(buffer, pagesize=layout.page_size.pagesize)
     y = start_page(c)
@@ -475,6 +483,7 @@ def _render_cover_page(
     *,
     layout: PageLayout = DEFAULT_PAGE_LAYOUT,
     cover_background: tuple[float, float, float] = DEFAULT_BACKGROUND_RGB,
+    summary_disclaimer: bool = True,
 ) -> PdfReader:
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=layout.page_size.pagesize)
@@ -493,7 +502,13 @@ def _render_cover_page(
             y -= 14
 
     c.setFont("Helvetica", 10)
-    _draw_page_footer(c, layout, page_number, include_summaries=include_summaries)
+    _draw_page_footer(
+        c,
+        layout,
+        page_number,
+        include_summaries=include_summaries,
+        summary_disclaimer=summary_disclaimer,
+    )
     c.showPage()
     c.save()
     buffer.seek(0)
@@ -568,6 +583,7 @@ def _build_pdf_bytes(
     page_size_options: PageSizeOptions | None = None,
     include_covers: bool = True,
     stamp_page_numbers: bool = False,
+    summary_disclaimer: bool = True,
 ) -> bytes:
     if not part_documents:
         raise PdfBuildError("No documents to concatenate")
@@ -604,6 +620,7 @@ def _build_pdf_bytes(
             layout=index_layout,
             split=split,
             contents_background=contents_background,
+            summary_disclaimer=summary_disclaimer,
         )
         actual = len(toc_reader.pages)
         if actual == toc_page_count:
@@ -633,6 +650,7 @@ def _build_pdf_bytes(
         layout=index_layout,
         split=split,
         contents_background=contents_background,
+        summary_disclaimer=summary_disclaimer,
     )
 
     writer = PdfWriter()
@@ -654,6 +672,7 @@ def _build_pdf_bytes(
                 include_summaries,
                 layout=cover_layout,
                 cover_background=cover_background,
+                summary_disclaimer=summary_disclaimer,
             )
             writer.add_page(cover_reader.pages[0])
         source = PdfReader(str(doc.path))
@@ -680,6 +699,7 @@ def build_concatenated_pdf(
     page_size_options: PageSizeOptions | None = None,
     include_covers: bool = True,
     stamp_page_numbers: bool = False,
+    summary_disclaimer: bool = True,
 ) -> None:
     data = _build_pdf_bytes(
         documents,
@@ -691,6 +711,7 @@ def build_concatenated_pdf(
         page_size_options=page_size_options,
         include_covers=include_covers,
         stamp_page_numbers=stamp_page_numbers,
+        summary_disclaimer=summary_disclaimer,
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_bytes(data)

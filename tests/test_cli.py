@@ -395,3 +395,104 @@ class TestRegenerateSummariesCli:
         assert code == 0
         mock_tqdm.assert_called_once()
         assert mock_tqdm.call_args.kwargs["total"] == 1
+
+
+class TestSummariesFromFrontMatter:
+    def _tree(self, tmp_path: Path) -> tuple[Path, Path]:
+        pdf_dir = tmp_path / "pdfs"
+        md_dir = tmp_path / "md"
+        make_pdf(pdf_dir / "acme.pdf", "Acme")
+        make_pdf(pdf_dir / "beta.pdf", "Beta")
+        md_dir.mkdir()
+        (md_dir / "acme.md").write_text(
+            '---\noriginal_headline: "Acme raises a round"\n'
+            'section: news\nsummary: "Acme raised 1M."\n---\n'
+        )
+        (md_dir / "beta.md").write_text(
+            '---\nsection: profile\nsummary: "Beta ships."\n---\n'
+        )
+        return pdf_dir, md_dir
+
+    def test_builds_summaries_without_llm(self, tmp_path: Path):
+        pdf_dir, md_dir = self._tree(tmp_path)
+        out = tmp_path / "out.pdf"
+        code = main(
+            [
+                "-o",
+                str(out),
+                "--frontmatter-dir",
+                str(md_dir),
+                "--summaries-from-frontmatter",
+                '(original_headline ? original_headline ": ") summary " (" section ")"',
+                str(pdf_dir),
+            ]
+        )
+        assert code == 0
+        toc = PdfReader(str(out)).pages[0].extract_text() or ""
+        assert "Acme raises a round: Acme raised 1M. (news)" in toc.replace("\n", " ")
+        assert "Beta ships. (profile)" in toc.replace("\n", " ")
+
+    def test_no_sidecars_written(self, tmp_path: Path):
+        pdf_dir, md_dir = self._tree(tmp_path)
+        code = main(
+            [
+                "-o",
+                str(tmp_path / "out.pdf"),
+                "--frontmatter-dir",
+                str(md_dir),
+                "--summaries-from-frontmatter",
+                "summary",
+                str(pdf_dir),
+            ]
+        )
+        assert code == 0
+        assert list(pdf_dir.glob("*.sidecar.json")) == []
+
+    def test_disclaimer_suppressed(self, tmp_path: Path):
+        pdf_dir, md_dir = self._tree(tmp_path)
+        out = tmp_path / "out.pdf"
+        main(
+            [
+                "-o",
+                str(out),
+                "--frontmatter-dir",
+                str(md_dir),
+                "--summaries-from-frontmatter",
+                "summary",
+                str(pdf_dir),
+            ]
+        )
+        all_text = " ".join(
+            (p.extract_text() or "") for p in PdfReader(str(out)).pages
+        )
+        assert "generated automatically" not in all_text
+
+    def test_bad_expression_is_rejected(self, tmp_path: Path, capsys):
+        pdf_dir, md_dir = self._tree(tmp_path)
+        code = main(
+            [
+                "-o",
+                str(tmp_path / "out.pdf"),
+                "--frontmatter-dir",
+                str(md_dir),
+                "--summaries-from-frontmatter",
+                "summary (",
+                str(pdf_dir),
+            ]
+        )
+        assert code == 2
+        assert "expression" in capsys.readouterr().err
+
+    def test_missing_front_matter_warns_but_succeeds(self, tmp_path: Path, capsys):
+        pdf_dir, _ = self._tree(tmp_path)
+        code = main(
+            [
+                "-o",
+                str(tmp_path / "out.pdf"),
+                "--summaries-from-frontmatter",
+                "summary",
+                str(pdf_dir),
+            ]
+        )
+        assert code == 0
+        assert "no front matter found" in capsys.readouterr().err

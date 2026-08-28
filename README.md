@@ -114,6 +114,40 @@ The server should expose an OpenAI-compatible `/v1/chat/completions` endpoint. T
 
 Summaries are stored beside each PDF as `document.pdf.sidecar.json` and reused when the file hash matches.
 
+### Summaries from front matter (no LLM)
+
+If each PDF has a companion Markdown/YAML file with usable metadata, build the
+summaries from it directly — no model, near-instant, exact text:
+
+```bash
+pdf-concatenator -o combined.pdf --no-interstitial-pages \
+  --frontmatter-dir ./posts-src \
+  --summaries-from-frontmatter '(original_headline ? original_headline ": ") summary " (" section ")"' \
+  ./posts-pdf/
+```
+
+For each `posts-pdf/<name>.pdf` it reads `<name>.md` (or `.markdown` / `.yaml` /
+`.yml`) — from `--frontmatter-dir` if given, otherwise beside the PDF — parses the
+leading `---` front-matter block, and evaluates the expression to produce that
+document's summary. No sidecar files are written. The "generated automatically"
+disclaimer is omitted in this mode.
+
+**Expression language:**
+
+| Form | Meaning |
+| --- | --- |
+| `field` | the value of a front-matter field (empty string if absent) |
+| `"text"` | a literal string (`\"` and `\\` escapes; `\n`, `\t`) |
+| `\(` `\)` `\ ` … | any `\x` is the literal character `x` |
+| `a b c` | adjacent terms are concatenated; the whitespace between them is only a separator and emits nothing |
+| `cond ? a : b` | if `cond` evaluates non-empty, use `a`, else `b` |
+| `cond ? a` | the `: b` is optional and defaults to empty |
+| `( … )` | grouping |
+
+A list value (`people: [a, b]`) stringifies as `a, b`. Because juxtaposition has
+no visible operator, an inline `? :` must be parenthesised when anything follows
+it — `(headline ? headline ": ") summary`, not `headline ? headline ": " summary`.
+
 ### Per-run summary instructions
 
 `--summary-instructions "TEXT"` appends extra guidance to the prompt for one run,
@@ -158,7 +192,9 @@ If everything fits in one file, the original output name is used with no `_part_
 usage: pdf-concatenator [-h] [-o filename] [--include-summaries]
                         [--regenerate-summaries] [--exclude pattern]
                         [--config CONFIG] [--summary-instructions TEXT]
-                        [--summary-instructions-file PATH] [--page-numbers]
+                        [--summary-instructions-file PATH]
+                        [--summaries-from-frontmatter EXPR]
+                        [--frontmatter-dir DIR] [--page-numbers]
                         [--no-interstitial-pages] [--verbose]
                         [--max-output-size SIZE]
                         [--contents-background color]
@@ -177,6 +213,8 @@ usage: pdf-concatenator [-h] [-o filename] [--include-summaries]
 | `--config` | Path to LLM config (default: `~/.config/pdf-concatenator`) |
 | `--summary-instructions` | Extra text appended to the summarisation prompt for this run |
 | `--summary-instructions-file` | Read the extra summarisation instructions from a file |
+| `--summaries-from-frontmatter` | Build summaries from companion front matter via an expression (no LLM) |
+| `--frontmatter-dir` | Where to find the `<stem>.md`/`.yaml` companion files (default: beside each PDF) |
 | `--verbose` | Show library warnings while reading/merging PDFs |
 | `--max-output-size` | Split output into parts under this size (e.g. `50M`, `2G`) |
 | `--contents-background` | Background colour for contents pages (default: `#f3f2a3`) |
