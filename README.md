@@ -226,6 +226,8 @@ usage: pdf-concatenator [-h] [-o filename] [--include-summaries]
 pytest
 ```
 
+Release history is in [CHANGELOG.md](CHANGELOG.md).
+
 ## License
 
 MIT
