@@ -12,9 +12,12 @@ This tool was built to pull together a large set of PDFs for a **contract submis
 - Insert a **cover page** before each source PDF (path, optional summary, page number), or omit them entirely (`--no-interstitial-pages`)
 - Optionally **superimpose running page numbers** on the source pages (`--page-numbers`)
 - Tinted **background colours** on contents and cover pages so they stand out when scrolling (default: legal-pad yellow)
-- Optionally generate **LLM summaries** via a sidecar file per PDF (`*.pdf.sidecar.json`)
+- Optionally generate **LLM summaries** via a sidecar file per PDF (`*.pdf.sidecar.json`), with per-run prompt tweaks (`--summary-instructions`)
+- Or build summaries from each PDF's companion **front matter** with an expression, no LLM (`--summaries-from-frontmatter`)
 - Regenerate sidecars without concatenating (`--regenerate-summaries`)
+- Snap mixed page sizes to a printer's paper set (`--page-sizes`)
 - Exclude specific files or patterns (`--exclude`)
+- Split the output into size-limited parts (`--max-output-size`)
 - Progress bar while summaries are processed
 
 ## Installation
@@ -166,7 +169,7 @@ from the front-matter 'summary:' field verbatim; do not write a new one from the
 
 ## Output structure
 
-1. **Contents** — tree of folders and files; page numbers point to each document's cover page. Alternating rows are shaded. When summaries are included, a disclaimer appears in the footer.
+1. **Contents** — tree of folders and files; page numbers point to each document's cover page, or its first page under `--no-interstitial-pages`. Alternating rows are shaded. When LLM summaries are included a "generated automatically" disclaimer appears in the footer; it is omitted for `--summaries-from-frontmatter`.
 2. **Cover page** per PDF — relative path, optional summary, page number. Both contents and cover pages use a tinted background (legal-pad yellow by default). Suppressed by `--no-interstitial-pages`.
 3. **Original PDF pages** — unchanged, unless `--page-numbers` is given, in which case a running page number is superimposed at the foot of each page.
 
@@ -199,6 +202,8 @@ usage: pdf-concatenator [-h] [-o filename] [--include-summaries]
                         [--max-output-size SIZE]
                         [--contents-background color]
                         [--cover-background color]
+                        [--page-sizes SIZES] [--index-page-size SIZE]
+                        [--separator-page-size SIZE]
                         pattern
 ```
 
@@ -219,6 +224,9 @@ usage: pdf-concatenator [-h] [-o filename] [--include-summaries]
 | `--max-output-size` | Split output into parts under this size (e.g. `50M`, `2G`) |
 | `--contents-background` | Background colour for contents pages (default: `#f3f2a3`) |
 | `--cover-background` | Background colour for cover pages (default: `#f3f2a3`) |
+| `--page-sizes` | Comma-separated paper sizes available on the printer (e.g. `a4,a3`); snaps every page to the closest match |
+| `--index-page-size` | Page size for contents pages (default: `a4`, or the first document's size with `--page-sizes`) |
+| `--separator-page-size` | Page size for cover pages (default: `a4`, or each document's size with `--page-sizes`) |
 
 ## Development
 
